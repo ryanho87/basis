@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Basis
 
-## Getting Started
+> Your real financial picture.
 
-First, run the development server:
+Personal finance for tech workers and high-income professionals. Tracks lot-level cost basis, projects income against tax thresholds, and uses Claude as a planning partner.
+
+## What it does today
+
+- **Net worth dashboard** with after-tax discounting (taxable, traditional, Roth, real estate handled differently)
+- **Accounts**: taxable brokerage, 401k (traditional + Roth), IRAs, HSA, crypto, cash, real estate, liabilities, student loans
+- **Lot-level cost basis** for taxable + crypto accounts; holding-period (LT/ST) classification
+- **RSU grants** with auto-generated vest schedules; mark-as-vested locks FMV as cost basis and creates a linked AssetLot
+- **Income projection** for the year — paycheck profile + W-2 YTD snapshots + RSU vests + S-Corp distributions
+- **Tax projection** with federal brackets, LTCG stacking, NIIT exposure, and threshold tracker UI
+- **LLM onboarding** — chat-driven profile setup that recommends strategies tailored to the user's situation
+- **LLM chat** — Claude knows your full financial snapshot and can reason about tax-efficient liquidation, debt strategy, etc.
+
+## Stack
+
+- Next.js 16 (App Router) + Turbopack
+- TypeScript, Tailwind v4
+- Prisma 7 + SQLite (better-sqlite3 driver adapter)
+- Claude Sonnet 4.6 (Anthropic SDK), streaming SSE
+- Recharts, lucide-react
+
+## Setup
 
 ```bash
+# Install Node if needed
+brew install node
+
+# Install dependencies
+npm install
+
+# Run migrations + generate Prisma client
+npx prisma migrate dev
+npx prisma generate
+
+# Add your Anthropic API key to .env
+echo 'ANTHROPIC_API_KEY="sk-ant-..."' >> .env
+
+# Run dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## What's next (planned)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- CSV import (Schwab / Fidelity / E*Trade / Coinbase)
+- Planned-sale scenario modeling (with lot-selection)
+- Proactive LLM insights cron
+- ESPP, ISO/NQSO support
+- State tax brackets
+- Real-time market prices
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Notes
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Tax engine is a deliberately simplified federal model — no AMT, no state, no social security wage base. Good for planning, not for filing.
+- Single-user MVP — no auth yet. The schema supports multi-user.

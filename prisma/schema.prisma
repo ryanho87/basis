@@ -1,0 +1,399 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Single-user MVP — no auth yet, but schema supports multi-user later.
+model User {
+  id              String   @id @default(cuid())
+  email           String?  @unique
+  name            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Tax / filing context
+  filingStatus    FilingStatus @default(SINGLE)
+  state           String?
+  profileType     ProfileType  @default(UNCLASSIFIED)
+
+  // Onboarding output — free-text summary of user's situation that the LLM produced.
+  onboardingSummary String?
+  primaryConcern    String?
+  onboardedAt       DateTime?
+
+  accounts         Account[]
+  rsuGrants        RsuGrant[]
+  manualAssets     ManualAsset[]
+  liabilities      Liability[]
+  studentLoans     StudentLoan[]
+  w2Snapshots      W2Snapshot[]
+  paycheckProfile  PaycheckProfile?
+  sCorpProfile     SCorpProfile?
+  plannedSales     PlannedSale[]
+  chatThreads      ChatThread[]
+  strategySuggestions StrategySuggestion[]
+}
+
+enum FilingStatus {
+  SINGLE
+  MARRIED_FILING_JOINTLY
+  MARRIED_FILING_SEPARATELY
+  HEAD_OF_HOUSEHOLD
+}
+
+enum ProfileType {
+  UNCLASSIFIED
+  TECH_EMPLOYEE        // W-2 + RSUs/equity
+  W2_PROFESSIONAL      // Plain W-2, no equity
+  S_CORP_OWNER         // S-Corp owner with W-2 from own corp + distributions
+  SELF_EMPLOYED        // Sole prop / 1099 / freelance
+  MIXED                // Multiple income types
+}
+
+// ---------- Accounts & holdings ----------
+
+model Account {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  institution  String?
+  type         AccountType
+  // Cash balance for checking/savings, or non-lot value for tax-advantaged accounts.
+  cashBalance  Float        @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  lots         AssetLot[]
+  positions    HoldingPosition[]
+  transactions Transaction[]
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  TAXABLE_BROKERAGE
+  K401_TRADITIONAL
+  K401_ROTH
+  IRA_TRADITIONAL
+  IRA_ROTH
+  HSA
+  CRYPTO
+  OTHER
+}
+
+// Lot-level cost basis — used for taxable accounts and crypto.
+model AssetLot {
+  id              String   @id @default(cuid())
+  accountId       String
+  account         Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ticker          String
+  name            String?
+  shares          Float
+  costBasisPerShare Float
+  acquiredAt      DateTime
+  acquisitionType AcquisitionType @default(PURCHASE)
+  notes           String?
+  // For RSU lots, link back to the originating vest event (optional).
+  vestEventId     String?  @unique
+  vestEvent       VestEvent? @relation(fields: [vestEventId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+enum AcquisitionType {
+  PURCHASE
+  RSU_VEST
+  ESPP
+  DIVIDEND_REINVESTMENT
+  GIFT
+  INHERITANCE
+  TRANSFER_IN
+}
+
+// Tax-advantaged account holdings — no lot tracking, just current position value.
+model HoldingPosition {
+  id           String   @id @default(cuid())
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ticker       String
+  name         String?
+  shares       Float
+  currentValue Float    // user-entered or fetched
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Imported transaction history (for taxable / crypto accounts).
+model Transaction {
+  id           String   @id @default(cuid())
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date         DateTime
+  type         TransactionType
+  ticker       String?
+  shares       Float?
+  pricePerShare Float?
+  totalAmount  Float
+  fees         Float    @default(0)
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DIVIDEND
+  INTEREST
+  TRANSFER_IN
+  TRANSFER_OUT
+  FEE
+  OTHER
+}
+
+// ---------- RSU grants & vesting ----------
+
+model RsuGrant {
+  id           String     @id @default(cuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticker       String
+  company      String?
+  grantDate    DateTime
+  totalShares  Float
+  notes        String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  vestEvents   VestEvent[]
+}
+
+model VestEvent {
+  id          String       @id @default(cuid())
+  grantId     String
+  grant       RsuGrant     @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  vestDate    DateTime
+  shares      Float
+  fmvAtVest   Float?       // null until vested; set on vest to lock cost basis
+  status      VestStatus   @default(PENDING)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // When marked vested, an AssetLot is created and linked here.
+  lot         AssetLot?
+}
+
+enum VestStatus {
+  PENDING
+  VESTED
+  CANCELED
+}
+
+// ---------- Manual assets & liabilities ----------
+
+model ManualAsset {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  type          ManualAssetType
+  currentValue  Float
+  purchasePrice Float?
+  purchaseDate  DateTime?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+enum ManualAssetType {
+  REAL_ESTATE
+  VEHICLE
+  COLLECTIBLE
+  PRIVATE_EQUITY
+  OTHER
+}
+
+model Liability {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  type          LiabilityType
+  currentBalance Float
+  interestRate  Float?
+  monthlyPayment Float?
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+enum LiabilityType {
+  MORTGAGE
+  AUTO_LOAN
+  CREDIT_CARD
+  PERSONAL_LOAN
+  OTHER
+}
+
+model StudentLoan {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  servicer        String?
+  loanType        StudentLoanType
+  balance         Float
+  interestRate    Float
+  monthlyPayment  Float?
+  repaymentPlan   RepaymentPlan?
+  pslfEligible    Boolean          @default(false)
+  pslfPaymentsCount Int?           // count toward 120 qualifying payments
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+enum StudentLoanType {
+  FEDERAL_DIRECT
+  FEDERAL_PLUS
+  PRIVATE
+  OTHER
+}
+
+enum RepaymentPlan {
+  STANDARD
+  GRADUATED
+  IBR
+  PAYE
+  SAVE
+  ICR
+  REFINANCED
+}
+
+// ---------- Income profiles ----------
+
+model PaycheckProfile {
+  id                String      @id @default(cuid())
+  userId            String      @unique
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  annualSalary      Float
+  payFrequency      PayFrequency
+  expectedBonus     Float?
+  bonusMonth        Int?        // 1-12, when bonus typically lands
+  // Pre-tax deduction estimates (per year)
+  k401Contribution  Float?
+  hsaContribution   Float?
+  otherPretax       Float?
+  notes             String?
+  updatedAt         DateTime    @updatedAt
+}
+
+enum PayFrequency {
+  WEEKLY
+  BIWEEKLY
+  SEMIMONTHLY
+  MONTHLY
+}
+
+// For S-Corp owners — tracks the corp's revenue and the W-2/distribution split.
+model SCorpProfile {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  corpName            String?
+  annualRevenue       Float
+  operatingExpenses   Float    @default(0)
+  w2SalaryFromCorp    Float    // payroll taxes apply
+  projectedDistribution Float? // K-1, no payroll tax
+  // Self-employed retirement vehicle context
+  solo401kContribution Float?
+  sepIraContribution   Float?
+  updatedAt           DateTime @updatedAt
+}
+
+// Point-in-time YTD W-2 snapshot — user can add multiple per year.
+model W2Snapshot {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taxYear             Int
+  snapshotDate        DateTime
+  ytdWages            Float
+  ytdFederalWithheld  Float    @default(0)
+  ytdStateWithheld    Float    @default(0)
+  ytdSocialSecurity   Float    @default(0)
+  ytdMedicare         Float    @default(0)
+  ytdBonuses          Float    @default(0)
+  ytdRsuVestIncome    Float    @default(0)
+  notes               String?
+  createdAt           DateTime @default(now())
+}
+
+// ---------- Scenario modeling ----------
+
+model PlannedSale {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticker       String
+  shares       Float
+  // Either specific lot IDs (JSON array) or null = FIFO
+  lotSelection String?
+  estimatedPricePerShare Float
+  plannedDate  DateTime
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ---------- LLM artifacts ----------
+
+model ChatThread {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  kind      ChatKind    @default(GENERAL)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  messages  ChatMessage[]
+}
+
+enum ChatKind {
+  ONBOARDING
+  GENERAL
+  SCENARIO
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  threadId  String
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role      String   // 'user' | 'assistant' | 'system'
+  content   String
+  createdAt DateTime @default(now())
+}
+
+// Strategies surfaced by the LLM that the user can review.
+model StrategySuggestion {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  summary     String
+  category    String?  // e.g., 'tax', 'retirement', 'real_estate', 'debt'
+  detail      String?  // longer LLM-generated explanation
+  status      SuggestionStatus @default(NEW)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum SuggestionStatus {
+  NEW
+  ACKNOWLEDGED
+  DISMISSED
+  ACTIONED
+}
