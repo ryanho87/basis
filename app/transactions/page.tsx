@@ -44,7 +44,7 @@ export default async function TransactionsPage() {
   const categories: SpendingCategory[] = [...categoryMap].map(([category, amount]) => ({ category: pretty(category), amount })).sort((a, b) => b.amount - a.amount).slice(0, 8);
   const rows: TransactionRow[] = transactions.map((transaction) => ({ id: transaction.id, date: transaction.date.toISOString(), name: transaction.name, merchantName: transaction.merchantName, amount: transaction.amount, pending: transaction.pending, category: transaction.plaidDetailedCategory || transaction.plaidPrimaryCategory, accountName: transaction.plaidAccount.name, accountMask: transaction.plaidAccount.mask, institutionName: transaction.plaidAccount.plaidItem.institutionName }));
 
-  return <div><PageHeader title="Transactions" description="Every connected cash and card account, without making you play tab roulette" actions={<SyncAllButton disabled={transactions.length === 0} />} /><PageBody className="max-w-[1500px]"><div className="space-y-6"><CashFlowOverview months={[...monthMap.values()]} categories={categories} /><TransactionFeed transactions={rows} /></div></PageBody></div>;
+  return <div><PageHeader title="Transactions" description="Every connected cash and card account, without making you play tab roulette" actions={<SyncAllButton />} /><PageBody className="max-w-[1500px]"><div className="space-y-6"><CashFlowOverview months={[...monthMap.values()]} categories={categories} /><TransactionFeed transactions={rows} /></div></PageBody></div>;
 }
 
 function pretty(value: string) { return value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); }
