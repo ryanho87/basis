@@ -12,6 +12,7 @@ import type {
 import { prisma } from "@/lib/prisma";
 import { captureNetWorthSnapshot } from "@/lib/net-worth";
 import { autoCategorizeTransactions } from "@/lib/transaction-categorization";
+import { pairCreditCardPayments } from "@/lib/transaction-transfers";
 import { getPlaidClient } from "./client";
 import { getPlaidConfigForItem } from "./developer-credentials";
 import { toSafePlaidError } from "./errors";
@@ -362,7 +363,7 @@ async function syncTransactions(
 export async function syncPlaidItem(
   connectionId: string,
   userId: string,
-  options: { captureSnapshot?: boolean } = {},
+  options: { captureSnapshot?: boolean; pairTransfers?: boolean } = {},
 ): Promise<PlaidSyncSummary> {
   const connection = await prisma.plaidItem.findFirst({
     where: { id: connectionId, userId, status: { not: "DISCONNECTED" } },
@@ -482,6 +483,13 @@ export async function syncPlaidItem(
         await autoCategorizeTransactions(userId);
       } catch {
         warnings.push("Transactions synced, but automatic categorization could not be refreshed");
+      }
+      if (options.pairTransfers !== false) {
+        try {
+          await pairCreditCardPayments(userId);
+        } catch {
+          warnings.push("Transactions synced, but credit card payments could not be paired");
+        }
       }
     }
 
@@ -617,7 +625,7 @@ export async function syncAllPlaidItems(
 
   for (const connection of connections) {
     try {
-      const summary = await syncPlaidItem(connection.id, userId, { captureSnapshot: false });
+      const summary = await syncPlaidItem(connection.id, userId, { captureSnapshot: false, pairTransfers: false });
       aggregate.accountsCount += summary.accountsCount;
       aggregate.holdingsCount += summary.holdingsCount;
       aggregate.taxLotsCount += summary.taxLotsCount;
@@ -630,6 +638,14 @@ export async function syncAllPlaidItems(
         institutionName: connection.institutionName ?? "Connected institution",
         error: error instanceof Error ? error.message : "Sync failed",
       });
+    }
+  }
+
+  if (aggregate.transactionsCount > 0) {
+    try {
+      await pairCreditCardPayments(userId);
+    } catch {
+      aggregate.warnings.push("Transactions synced, but credit card payments could not be paired");
     }
   }
 

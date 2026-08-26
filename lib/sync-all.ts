@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { captureNetWorthSnapshot, netWorthDateKey } from "@/lib/net-worth";
 import { syncCoinbase, type CoinbaseSyncSummary } from "@/lib/coinbase/sync";
 import { syncAllPlaidItems, type PlaidSyncAllSummary } from "@/lib/plaid/sync";
-import { pairCreditCardPayments } from "@/lib/transaction-transfers";
 
 export type FullSyncSummary = {
   plaid: PlaidSyncAllSummary;
@@ -23,8 +22,6 @@ export async function syncAllFinancialAccounts(
   for (const failure of plaid.failedConnections) {
     errors.push(`${failure.institutionName}: ${failure.error}`);
   }
-  await pairCreditCardPayments(userId);
-
   const coinbaseConnection = await prisma.coinbaseConnection.findFirst({
     where: { userId, status: { not: "DISCONNECTED" } },
     select: { id: true },

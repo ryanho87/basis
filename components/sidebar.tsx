@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
@@ -37,6 +37,19 @@ const NAV = [
   { href: "/onboarding", label: "Onboarding", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+function NavigationPendingHint() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute inset-x-3 bottom-1 h-0.5 origin-center rounded-full bg-emerald-600 transition-[opacity,transform] duration-150 ease-out dark:bg-emerald-400",
+        pending ? "scale-x-100 opacity-100" : "scale-x-0 opacity-0",
+      )}
+    />
+  );
+}
 
 type SidebarProps = {
   persona?: PrimaryPersona | null;
@@ -82,9 +95,10 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
   return (
     <>
       <header className="sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-zinc-200 bg-white/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:hidden">
-        <Link href="/" className="flex items-center gap-2" aria-label="Basis dashboard">
+        <Link href="/" prefetch={false} className="relative flex items-center gap-2" aria-label="Basis dashboard">
           <span className="flex size-8 items-center justify-center rounded-md bg-emerald-600 font-bold text-white">B</span>
           <span className="text-sm font-semibold tracking-tight">Basis</span>
+          <NavigationPendingHint />
         </Link>
         <button
           type="button"
@@ -99,10 +113,11 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
 
       <aside className="hidden w-60 shrink-0 flex-col border-r border-zinc-200 bg-zinc-50/40 dark:border-zinc-800 dark:bg-zinc-950 md:flex">
       <div className="px-5 py-5">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" prefetch={false} className="relative flex items-center gap-2">
           <div className="size-8 rounded-md bg-emerald-600 flex items-center justify-center text-white font-bold">
             B
           </div>
+          <NavigationPendingHint />
           <div>
             <div className="text-sm font-semibold tracking-tight">Basis</div>
             <div className="text-[11px] text-zinc-500">Your real financial picture</div>
@@ -117,8 +132,9 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                "relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                 active
                   ? "bg-zinc-200/60 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
                   : "text-zinc-600 hover:bg-zinc-200/40 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/60 dark:hover:text-zinc-100",
@@ -126,6 +142,7 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
             >
               <Icon className="size-4" />
               {item.label}
+              <NavigationPendingHint />
             </Link>
           );
         })}
@@ -153,9 +170,10 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
           const active = pathname === item.href || (item.href !== "/" && pathname?.startsWith(item.href));
           const Icon = item.icon;
           return (
-            <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)} className={cn("flex min-h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium", active ? "text-emerald-700 dark:text-emerald-400" : "text-zinc-500")}>
+            <Link key={item.href} href={item.href} prefetch={true} onClick={() => setMobileMenuOpen(false)} className={cn("relative flex min-h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium", active ? "text-emerald-700 dark:text-emerald-400" : "text-zinc-500")}>
               <Icon className="size-5" aria-hidden="true" />
               {item.label}
+              <NavigationPendingHint />
             </Link>
           );
         })}
@@ -188,9 +206,10 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
                 const active = pathname === item.href || (item.href !== "/" && pathname?.startsWith(item.href));
                 const Icon = item.icon;
                 return (
-                  <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)} className={cn("flex min-h-14 items-center gap-3 rounded-lg border px-3 text-sm font-medium", active ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-zinc-200 text-zinc-700 dark:border-zinc-800 dark:text-zinc-300")}>
+                  <Link key={item.href} href={item.href} prefetch={false} onClick={() => setMobileMenuOpen(false)} className={cn("relative flex min-h-14 items-center gap-3 rounded-lg border px-3 text-sm font-medium", active ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300" : "border-zinc-200 text-zinc-700 dark:border-zinc-800 dark:text-zinc-300")}>
                     <Icon className="size-4 shrink-0" aria-hidden="true" />
                     {item.label}
+                    <NavigationPendingHint />
                   </Link>
                 );
               })}

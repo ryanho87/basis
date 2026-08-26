@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/user";
 import { valuateAccount } from "@/lib/finance";
-import { captureNetWorthSnapshot } from "@/lib/net-worth";
+import { calculateUnifiedNetWorth } from "@/lib/net-worth";
 import { formatDate } from "@/lib/utils";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { PlaidConnections } from "@/components/plaid-connections";
@@ -69,7 +69,7 @@ function basisStatus(covered: number, relevant: number): AccountBreakdownRow["ba
 
 export default async function AccountsPage() {
   const user = await getCurrentUser();
-  const [accounts, manualAssets, liabilities, studentLoans, plaidItems, coinbase, netWorthCapture, plaidCredential] = await Promise.all([
+  const [accounts, manualAssets, liabilities, studentLoans, plaidItems, coinbase, netWorth, plaidCredential] = await Promise.all([
     prisma.account.findMany({
       where: { userId: user.id },
       include: { lots: true, positions: true },
@@ -97,11 +97,9 @@ export default async function AccountsPage() {
       where: { userId: user.id },
       include: { accounts: { where: { isActive: true } } },
     }),
-    captureNetWorthSnapshot(user.id, "DASHBOARD"),
+    calculateUnifiedNetWorth(user.id),
     getPlaidCredentialStatus(user.id),
   ]);
-  const netWorth = netWorthCapture.value;
-
   const rows: AccountBreakdownRow[] = [];
 
   for (const account of accounts) {
@@ -213,10 +211,7 @@ export default async function AccountsPage() {
     });
   }
 
-  const [aggregateHistoryDescending, accountHistoryDescending] = await Promise.all([
-    prisma.netWorthSnapshot.findMany({ where: { userId: user.id }, select: { dateKey: true, capturedAt: true, netWorth: true }, orderBy: { capturedAt: "desc" }, take: 500 }),
-    prisma.accountNetWorthSnapshot.findMany({ where: { userId: user.id, accountKey: { in: rows.map((row) => row.id) } }, select: { snapshotKey: true, capturedAt: true, accountKey: true, value: true }, orderBy: { capturedAt: "desc" }, take: 5000 }),
-  ]);
+  const historyPromise = loadNetWorthHistory(user.id, rows.map((row) => row.id));
 
   return (
     <div>
@@ -242,8 +237,7 @@ export default async function AccountsPage() {
             netWorth={netWorth.netWorth}
             totalAssets={netWorth.totalAssets}
             totalLiabilities={netWorth.totalLiabilities}
-            aggregatePoints={aggregateHistoryDescending.reverse().map((point) => ({ snapshotKey: point.dateKey, capturedAt: point.capturedAt.toISOString(), value: point.netWorth }))}
-            accountPoints={accountHistoryDescending.reverse().map((point) => ({ snapshotKey: point.snapshotKey, capturedAt: point.capturedAt.toISOString(), accountKey: point.accountKey, value: point.value }))}
+            historyPromise={historyPromise}
           />
 
           <section aria-labelledby="connections-heading">
@@ -294,6 +288,38 @@ export default async function AccountsPage() {
       </PageBody>
     </div>
   );
+}
+
+async function loadNetWorthHistory(userId: string, accountKeys: string[]) {
+  const [aggregateHistoryDescending, accountHistoryDescending] = await Promise.all([
+    prisma.netWorthSnapshot.findMany({
+      where: { userId },
+      select: { dateKey: true, capturedAt: true, netWorth: true },
+      orderBy: { capturedAt: "desc" },
+      take: 500,
+    }),
+    accountKeys.length
+      ? prisma.accountNetWorthSnapshot.findMany({
+          where: { userId, accountKey: { in: accountKeys } },
+          select: { snapshotKey: true, capturedAt: true, accountKey: true, value: true },
+          orderBy: { capturedAt: "desc" },
+          take: 5000,
+        })
+      : Promise.resolve([]),
+  ]);
+  return {
+    aggregatePoints: aggregateHistoryDescending.reverse().map((point) => ({
+      snapshotKey: point.dateKey,
+      capturedAt: point.capturedAt.toISOString(),
+      value: point.netWorth,
+    })),
+    accountPoints: accountHistoryDescending.reverse().map((point) => ({
+      snapshotKey: point.snapshotKey,
+      capturedAt: point.capturedAt.toISOString(),
+      accountKey: point.accountKey,
+      value: point.value,
+    })),
+  };
 }
 
 function ManualDataLink({ href, title, description }: { href: string; title: string; description: string }) {

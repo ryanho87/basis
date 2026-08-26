@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/user";
 import { projectIncome } from "@/lib/finance";
 import { getRsuPriceEstimates } from "@/lib/rsu-pricing";
 import { computeTax } from "@/lib/tax";
-import { captureNetWorthSnapshot } from "@/lib/net-worth";
+import { calculateUnifiedNetWorth } from "@/lib/net-worth";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { Stat } from "@/components/stat";
@@ -39,14 +40,7 @@ export default async function DashboardPage() {
   const onboarded = !!data.onboardedAt;
   const persona = derivePersona(data.primaryPersona, data.profileType);
   const physicianMode = persona === "PHYSICIAN";
-  const { value: nw } = await captureNetWorthSnapshot(user.id, "DASHBOARD");
-  const snapshotRows = await prisma.netWorthSnapshot.findMany({
-    where: { userId: user.id },
-    select: { dateKey: true, netWorth: true, afterTaxNetWorth: true },
-    orderBy: { capturedAt: "desc" },
-    take: 365,
-  });
-  const snapshots = snapshotRows.reverse();
+  const nw = await calculateUnifiedNetWorth(user.id);
   const hasAnyData =
     nw.connectedAccountsCount > 0 ||
     data.accounts.length > 0 ||
@@ -146,7 +140,9 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-6">
-            <NetWorthHistory points={snapshots} basisCoverage={nw.basisCoverage} />
+            <Suspense fallback={<NetWorthHistoryFallback />}>
+              <DashboardNetWorthHistory userId={user.id} basisCoverage={nw.basisCoverage} />
+            </Suspense>
 
             <div className="grid gap-4 md:grid-cols-3">
               <Stat
@@ -293,6 +289,22 @@ export default async function DashboardPage() {
         )}
       </PageBody>
     </div>
+  );
+}
+
+async function DashboardNetWorthHistory({ userId, basisCoverage }: { userId: string; basisCoverage: number | null }) {
+  const snapshotRows = await prisma.netWorthSnapshot.findMany({
+    where: { userId },
+    select: { dateKey: true, netWorth: true, afterTaxNetWorth: true },
+    orderBy: { capturedAt: "desc" },
+    take: 365,
+  });
+  return <NetWorthHistory points={snapshotRows.reverse()} basisCoverage={basisCoverage} />;
+}
+
+function NetWorthHistoryFallback() {
+  return (
+    <div aria-label="Loading net worth history" className="h-80 animate-pulse rounded-xl border border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/40" />
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { ChevronDown, Pencil, Plus, Search, Split, Trash2, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ export type TransactionRow = {
   splits: Array<{ id: string; categoryId: string; category: string; amount: number; note: string | null }>;
 };
 type Rule = { id: string; merchantPattern: string; category: string };
+type Pagination = { page: number; pageSize: number; totalPages: number; totalTransactions: number };
 
 function transactionDate(date: string, includeYear = false) {
   return new Date(date).toLocaleDateString("en-US", {
@@ -24,7 +26,7 @@ function transactionDate(date: string, includeYear = false) {
   });
 }
 
-export function TransactionFeed({ transactions, categories, rules, initialQuery = "" }: { transactions: TransactionRow[]; categories: CategoryOption[]; rules: Rule[]; initialQuery?: string }) {
+export function TransactionFeed({ transactions, categories, rules, initialQuery = "", pagination }: { transactions: TransactionRow[]; categories: CategoryOption[]; rules: Rule[]; initialQuery?: string; pagination: Pagination }) {
   const router = useRouter(); const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(initialQuery); const [account, setAccount] = useState("all"); const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCategory, setBulkCategory] = useState(""); const [treatment, setTreatment] = useState(""); const [cashFlowTreatment, setCashFlowTreatment] = useState(""); const [createRule, setCreateRule] = useState(false);
@@ -39,15 +41,40 @@ export function TransactionFeed({ transactions, categories, rules, initialQuery 
 
   return <section aria-labelledby="transactions-heading" className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
     <div className="border-b border-zinc-200 p-4 dark:border-zinc-800">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 id="transactions-heading" className="text-sm font-semibold">All transactions</h2><p className="mt-1 text-xs text-zinc-500">{filtered.length.toLocaleString()} shown · categories are yours, not Plaid&apos;s divine revelation</p></div><button type="button" onClick={() => setShowSettings((value) => !value)} className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900">Manage categories & rules <ChevronDown className={`size-4 transition-transform ${showSettings ? "rotate-180" : ""}`} /></button></div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 id="transactions-heading" className="text-sm font-semibold">All transactions</h2><p className="mt-1 text-xs text-zinc-500">{filtered.length.toLocaleString()} on this page · {pagination.totalTransactions.toLocaleString()} total · categories are yours, not Plaid&apos;s divine revelation</p></div><button type="button" onClick={() => setShowSettings((value) => !value)} className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-zinc-300 px-3 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900">Manage categories & rules <ChevronDown className={`size-4 transition-transform ${showSettings ? "rotate-180" : ""}`} /></button></div>
       {showSettings ? <CategoryManager categories={categories} rules={rules} newCategory={newCategory} setNewCategory={setNewCategory} addCategory={addCategory} mutate={mutate} pending={pending} /> : null}
       {error ? <div role="alert" className="mt-3 flex items-center justify-between gap-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss error"><X className="size-4" /></button></div> : null}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row"><label className="relative flex-1"><span className="sr-only">Search transactions</span><Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-zinc-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search merchant, category, or institution" className="h-9 w-full rounded-md border border-zinc-300 bg-transparent pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700" /></label><label><span className="sr-only">Filter by account</span><select value={account} onChange={(event) => setAccount(event.target.value)} className="h-9 w-full rounded-md border border-zinc-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 sm:w-56"><option value="all">All accounts</option>{accounts.map((name) => <option key={name}>{name}</option>)}</select></label></div>
     </div>
     {selected.size ? <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/60 lg:flex-row lg:flex-wrap lg:items-center"><p className="shrink-0 text-sm font-semibold text-emerald-900 dark:text-emerald-100">{selected.size} selected</p><select value={bulkCategory} onChange={(event) => setBulkCategory(event.target.value)} className="h-9 rounded-md border border-emerald-300 bg-white px-3 text-sm dark:border-emerald-800 dark:bg-zinc-950"><option value="">Choose category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><select value={treatment} onChange={(event) => setTreatment(event.target.value)} className="h-9 rounded-md border border-emerald-300 bg-white px-3 text-sm dark:border-emerald-800 dark:bg-zinc-950"><option value="">Tax treatment</option><option value="PERSONAL">Personal</option><option value="BUSINESS">Business</option><option value="MIXED">Mixed (50%)</option><option value="EXCLUDED">Excluded</option></select><select value={cashFlowTreatment} onChange={(event) => setCashFlowTreatment(event.target.value)} className="h-9 rounded-md border border-emerald-300 bg-white px-3 text-sm dark:border-emerald-800 dark:bg-zinc-950"><option value="">Cash-flow treatment</option><option value="AUTO">Automatic</option><option value="SPENDING">Spending</option><option value="INCOME">Income</option><option value="TRANSFER">Transfer</option></select><label className="flex items-center gap-2 text-xs text-emerald-900 dark:text-emerald-100"><input type="checkbox" checked={createRule} onChange={(event) => setCreateRule(event.target.checked)} /> Remember merchant rule</label><button type="button" disabled={pending || (!bulkCategory && !treatment && !cashFlowTreatment)} onClick={() => categorize([...selected], bulkCategory, treatment, cashFlowTreatment)} className="h-9 rounded-md bg-emerald-700 px-4 text-sm font-semibold text-white disabled:opacity-50">Apply</button><button type="button" onClick={() => setSelected(new Set())} className="text-sm text-zinc-600 dark:text-zinc-300">Clear</button></div> : null}
     <div className="flex items-center gap-3 border-b border-zinc-100 px-4 py-2 text-xs text-zinc-500 dark:border-zinc-900"><input aria-label="Select all visible transactions" type="checkbox" checked={allVisibleSelected} onChange={() => setSelected(allVisibleSelected ? new Set() : new Set(filtered.map((row) => row.id)))} /><span>Select all visible</span></div>
-    <div className="divide-y divide-zinc-100 dark:divide-zinc-900">{filtered.map((row) => <TransactionItem key={row.id} row={row} categories={categories} checked={selected.has(row.id)} setChecked={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(row.id); else next.delete(row.id); return next; })} pending={pending} categorize={categorize} splitOpen={splitId === row.id} toggleSplit={() => setSplitId(splitId === row.id ? null : row.id)} mutate={mutate} setError={setError} />)}{!filtered.length ? <div className="px-5 py-12 text-center text-sm text-zinc-500">No transactions match. Either the filter works or your wallet finally developed boundaries.</div> : null}</div>
+    <div className="divide-y divide-zinc-100 dark:divide-zinc-900">{filtered.map((row) => <TransactionItem key={row.id} row={row} categories={categories} checked={selected.has(row.id)} setChecked={(checked) => setSelected((current) => { const next = new Set(current); if (checked) next.add(row.id); else next.delete(row.id); return next; })} pending={pending} categorize={categorize} splitOpen={splitId === row.id} toggleSplit={() => setSplitId(splitId === row.id ? null : row.id)} mutate={mutate} setError={setError} />)}{!filtered.length ? <div className="px-5 py-12 text-center text-sm text-zinc-500">No transactions match this page. Try another page, unless your wallet finally developed boundaries.</div> : null}</div>
+    <TransactionPagination pagination={pagination} initialQuery={initialQuery} />
   </section>;
+}
+
+function TransactionPagination({ pagination, initialQuery }: { pagination: Pagination; initialQuery: string }) {
+  if (pagination.totalPages <= 1) return null;
+  const href = (page: number) => {
+    const params = new URLSearchParams();
+    if (initialQuery) params.set("category", initialQuery);
+    params.set("page", String(page));
+    return `/transactions?${params.toString()}`;
+  };
+  const first = (pagination.page - 1) * pagination.pageSize + 1;
+  const last = Math.min(pagination.page * pagination.pageSize, pagination.totalTransactions);
+  const linkClass = "inline-flex h-9 items-center justify-center rounded-md border border-zinc-300 px-3 text-sm font-medium transition-colors hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 dark:border-zinc-700 dark:hover:bg-zinc-900";
+
+  return (
+    <nav aria-label="Transaction pages" className="flex items-center justify-between gap-3 border-t border-zinc-200 px-4 py-3 dark:border-zinc-800">
+      <p className="text-xs tabular-nums text-zinc-500">{first.toLocaleString()}–{last.toLocaleString()} of {pagination.totalTransactions.toLocaleString()}</p>
+      <div className="flex items-center gap-2">
+        {pagination.page > 1 ? <Link prefetch={false} href={href(pagination.page - 1)} className={linkClass}>Previous</Link> : null}
+        <span className="min-w-16 text-center text-xs text-zinc-500">{pagination.page} / {pagination.totalPages}</span>
+        {pagination.page < pagination.totalPages ? <Link prefetch={false} href={href(pagination.page + 1)} className={linkClass}>Next</Link> : null}
+      </div>
+    </nav>
+  );
 }
 
 function TransactionItem({ row, categories, checked, setChecked, pending, categorize, splitOpen, toggleSplit, mutate, setError }: { row: TransactionRow; categories: CategoryOption[]; checked: boolean; setChecked: (checked: boolean) => void; pending: boolean; categorize: (ids: string[], categoryId?: string, treatment?: string, cashFlowTreatment?: string) => Promise<void>; splitOpen: boolean; toggleSplit: () => void; mutate: (url: string, init: RequestInit) => Promise<void>; setError: (error: string | null) => void }) {
