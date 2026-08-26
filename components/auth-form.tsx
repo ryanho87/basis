@@ -13,6 +13,8 @@ type AuthMode = "sign-in" | "sign-up";
 interface AuthFormProps {
   mode: AuthMode;
   googleEnabled?: boolean;
+  googleWebClientId?: string;
+  googleIosClientId?: string;
   passwordEnabled?: boolean;
   oauthError?: boolean;
   returnTo?: string;
@@ -30,7 +32,7 @@ function errorMessage(body: unknown) {
   return "Basis could not verify those details. Try again.";
 }
 
-export function AuthForm({ mode, invite, googleEnabled = false, passwordEnabled = true, oauthError = false, returnTo = "/" }: AuthFormProps) {
+export function AuthForm({ mode, invite, googleEnabled = false, googleWebClientId, googleIosClientId, passwordEnabled = true, oauthError = false, returnTo = "/" }: AuthFormProps) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(
@@ -42,6 +44,16 @@ export function AuthForm({ mode, invite, googleEnabled = false, passwordEnabled 
     setError(null);
     setPending(true);
     try {
+      const { Capacitor } = await import("@capacitor/core");
+      if (Capacitor.isNativePlatform() && googleIosClientId && googleWebClientId) {
+        const { SocialLogin } = await import("@capgo/capacitor-social-login");
+        await SocialLogin.initialize({ google: { iOSClientId: googleIosClientId, iOSServerClientId: googleWebClientId, webClientId: googleWebClientId, mode: "online" } });
+        const login = await SocialLogin.login({ provider: "google", options: { scopes: ["email", "profile"], forcePrompt: true } });
+        if (login.provider !== "google" || login.result.responseType !== "online" || !login.result.idToken) throw new Error("Google did not return an identity token");
+        const nativeResult = await authClient.signIn.social({ provider: "google", idToken: { token: login.result.idToken }, callbackURL: returnTo });
+        if (nativeResult.error) { setError(nativeResult.error.message || "Google sign-in failed."); return; }
+        router.push(returnTo); router.refresh(); return;
+      }
       const result = await authClient.signIn.social({
         provider: "google",
         callbackURL: returnTo,
@@ -49,8 +61,8 @@ export function AuthForm({ mode, invite, googleEnabled = false, passwordEnabled 
         ...(invite?.email ? { additionalParams: { login_hint: invite.email } } : {}),
       });
       if (result.error) setError(result.error.message || "Google sign-in failed.");
-    } catch {
-      setError("Basis could not start Google sign-in. Even OAuth occasionally needs adult supervision.");
+    } catch (caught) {
+      setError(caught instanceof Error && caught.message.includes("cancel") ? "Google sign-in was canceled." : "Basis could not start Google sign-in. Even OAuth occasionally needs adult supervision.");
     } finally {
       setPending(false);
     }

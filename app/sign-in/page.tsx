@@ -16,7 +16,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
 
   return (
     <AuthShell eyebrow="Welcome back" title="Sign in to your financial life" description="One private profile, one session, zero opportunities for strangers to critique your NVIDIA exposure.">
-      <AuthForm mode="sign-in" googleEnabled={googleEnabled} passwordEnabled={passwordEnabled} oauthError={Boolean(error)} returnTo={destination} />
+      <AuthForm mode="sign-in" googleEnabled={googleEnabled} googleWebClientId={process.env.GOOGLE_CLIENT_ID?.trim()} googleIosClientId={process.env.GOOGLE_IOS_CLIENT_ID?.trim()} passwordEnabled={passwordEnabled} oauthError={Boolean(error)} returnTo={destination} />
     </AuthShell>
   );
 }

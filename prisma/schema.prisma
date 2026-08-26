@@ -47,6 +47,8 @@ model User {
   chatThreads              ChatThread[]
   strategySuggestions      StrategySuggestion[]
   authIdentity             AuthUser?
+  transactionCategories    TransactionCategory[]
+  transactionRules         TransactionCategorizationRule[]
 }
 
 // ---------- Authentication ----------
@@ -236,6 +238,10 @@ model PlaidTransaction {
   expenseCategory        ExpenseCategory?
   deductiblePercent      Float?
   userNote               String?
+  transactionCategoryId  String?
+  transactionCategory    TransactionCategory? @relation(fields: [transactionCategoryId], references: [id], onDelete: SetNull)
+  categorizationSource   String               @default("PLAID")
+  splits                 TransactionSplit[]
   isRemoved              Boolean          @default(false)
   lastSyncedAt           DateTime
   createdAt              DateTime         @default(now())
@@ -244,6 +250,55 @@ model PlaidTransaction {
   @@index([plaidAccountId, date])
   @@index([expenseTreatment, date])
   @@index([expenseCategory, date])
+  @@index([transactionCategoryId, date])
+}
+
+model TransactionCategory {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  slug         String
+  color        String
+  isSystem     Boolean   @default(false)
+  archivedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  transactions PlaidTransaction[]
+  rules        TransactionCategorizationRule[]
+  splits       TransactionSplit[]
+
+  @@unique([userId, slug])
+  @@index([userId, archivedAt])
+}
+
+model TransactionCategorizationRule {
+  id              String              @id @default(cuid())
+  userId          String
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        TransactionCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  merchantPattern String
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([userId, merchantPattern])
+  @@index([categoryId])
+}
+
+model TransactionSplit {
+  id            String              @id @default(cuid())
+  transactionId String
+  transaction   PlaidTransaction    @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      TransactionCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  amount        Float
+  note          String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([transactionId])
+  @@index([categoryId])
 }
 
 model PlaidSecurity {

@@ -24,7 +24,7 @@ export default async function SignUpPage() {
 
   return (
     <AuthShell eyebrow="Private beta" title={`Create ${preview.name ? `${preview.name}'s` : "your"} account`} description={`This invitation is for ${preview.email}. It creates a separate financial profile; sharing can be added explicitly later.`}>
-      <AuthForm mode="sign-up" googleEnabled={googleEnabled} passwordEnabled={passwordEnabled} invite={{ email: preview.email, name: preview.name, expiresAt: preview.expiresAt.toISOString() }} />
+      <AuthForm mode="sign-up" googleEnabled={googleEnabled} googleWebClientId={process.env.GOOGLE_CLIENT_ID?.trim()} googleIosClientId={process.env.GOOGLE_IOS_CLIENT_ID?.trim()} passwordEnabled={passwordEnabled} invite={{ email: preview.email, name: preview.name, expiresAt: preview.expiresAt.toISOString() }} />
     </AuthShell>
   );
 }

@@ -11,6 +11,7 @@ import type {
 } from "plaid";
 import { prisma } from "@/lib/prisma";
 import { captureNetWorthSnapshot } from "@/lib/net-worth";
+import { autoCategorizeTransactions } from "@/lib/transaction-categorization";
 import { getPlaidClient } from "./client";
 import { getPlaidConfigForItem } from "./developer-credentials";
 import { toSafePlaidError } from "./errors";
@@ -475,6 +476,14 @@ export async function syncPlaidItem(
           warnings,
         )
       : null;
+
+    if (transactionSync) {
+      try {
+        await autoCategorizeTransactions(userId);
+      } catch {
+        warnings.push("Transactions synced, but automatic categorization could not be refreshed");
+      }
+    }
 
     await prisma.plaidHolding.updateMany({
       where: { plaidAccount: { plaidItemId: connection.id } },
