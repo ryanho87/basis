@@ -1,18 +1,39 @@
-import { prisma } from "./prisma";
+import "server-only";
 
-// Single-user MVP — get-or-create the one user.
-const DEFAULT_EMAIL = "you@basis.local";
+import { cache } from "react";
+import { headers } from "next/headers";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
-export async function getCurrentUser() {
-  const existing = await prisma.user.findFirst({ orderBy: { createdAt: "asc" } });
-  if (existing) return existing;
-  return prisma.user.create({
-    data: {
-      email: DEFAULT_EMAIL,
-      name: "You",
-    },
-  });
+export class AuthenticationRequiredError extends Error {
+  constructor() {
+    super("Authentication required");
+    this.name = "AuthenticationRequiredError";
+  }
 }
+
+export class FinancialProfileMissingError extends Error {
+  constructor() {
+    super("The authenticated identity is not attached to a financial profile");
+    this.name = "FinancialProfileMissingError";
+  }
+}
+
+export const getCurrentAuthSession = cache(async () =>
+  auth.api.getSession({ headers: await headers() }),
+);
+
+export const getCurrentUser = cache(async () => {
+  const session = await getCurrentAuthSession();
+  if (!session) throw new AuthenticationRequiredError();
+
+  const identity = await prisma.authUser.findUnique({
+    where: { id: session.user.id },
+    select: { profile: true },
+  });
+  if (!identity?.profile) throw new FinancialProfileMissingError();
+  return identity.profile;
+});
 
 export async function getCurrentUserId() {
   return (await getCurrentUser()).id;

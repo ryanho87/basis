@@ -1,0 +1,17 @@
+.git
+.next
+node_modules
+
+# Local secrets and financial data must never enter a deployment bundle.
+.env*
+!.env.example
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+prisma/dev.db*
+uploads
+data
+
+# Only files traced by the Next.js build are deployed. Shared read-only MCP
+# modules are imported by /api/mcp; the local process entry is never executed.

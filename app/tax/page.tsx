@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/user";
 import { projectIncome } from "@/lib/finance";
 import { computeTax } from "@/lib/tax";
+import { getRsuPriceEstimates } from "@/lib/rsu-pricing";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,46 +13,56 @@ import { Button } from "@/components/ui/button";
 import {
   upsertPaycheckProfile,
   upsertSCorpProfile,
-  addW2Snapshot,
+  addIncomeSnapshot,
   updateUserTaxSettings,
 } from "@/app/actions/income";
+import { PayStubUpload } from "@/components/pay-stub-upload";
+import { derivePersona } from "@/lib/profile-capabilities";
 
 export const dynamic = "force-dynamic";
 
 export default async function TaxPage() {
   const user = await getCurrentUser();
+  const taxYear = new Date().getFullYear();
   const data = await prisma.user.findUnique({
     where: { id: user.id },
     include: {
       paycheckProfile: true,
       sCorpProfile: true,
-      w2Snapshots: { orderBy: { snapshotDate: "desc" } },
+      w2Snapshots: { where: { taxYear }, orderBy: { snapshotDate: "desc" } },
       rsuGrants: { include: { vestEvents: true } },
     },
   });
   if (!data) return null;
+  const physicianMode = derivePersona(data.primaryPersona, data.profileType) === "PHYSICIAN";
 
-  const taxYear = new Date().getFullYear();
+  const rsuPriceEstimate = await getRsuPriceEstimates(user.id, data.rsuGrants.map((grant) => grant.ticker));
   const projection = projectIncome({
     taxYear,
     paycheck: data.paycheckProfile,
     sCorp: data.sCorpProfile,
     latestW2: data.w2Snapshots[0] ?? null,
     rsuGrants: data.rsuGrants,
+    rsuPriceEstimate,
   });
 
   const tax = computeTax({
+    taxYear,
     filingStatus: data.filingStatus,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
   });
+  const latestSnapshot = data.w2Snapshots[0] ?? null;
+  const payrollCoverageDate = latestSnapshot
+    ? new Date(latestSnapshot.payPeriodEnd ?? latestSnapshot.snapshotDate).toISOString().slice(0, 10)
+    : null;
 
   return (
     <div>
       <PageHeader
-        title={`Tax Projection (${taxYear})`}
-        description="Income projection, threshold tracking, and bracket room"
+        title={`${physicianMode ? "Tax Plan" : "Tax Projection"} (${taxYear})`}
+        description={physicianMode ? "Payroll, practice income, reserves, and bracket room" : "Income projection, threshold tracking, and bracket room"}
       />
       <PageBody>
         <div className="grid gap-4 md:grid-cols-4 mb-6">
@@ -106,6 +117,61 @@ export default async function TaxPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Card className="mb-6 border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20">
+          <CardHeader>
+            <CardTitle>Stock-sale headroom</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Stat label="LTCG before 20% rate" value={formatCurrency(tax.bracketRoom.ltcgRoomAt15, { compact: true })} hint="Additional long-term gains, federal only" />
+              <Stat label="0% LTCG room" value={formatCurrency(tax.bracketRoom.ltcgRoomAt0, { compact: true })} hint="Additional long-term gains" />
+              <Stat label="Room before NIIT" value={formatCurrency(Math.max(0, tax.thresholds.niit - projection.totalProjectedOrdinary - projection.realizedLTCG), { compact: true })} hint="Then investment income may face +3.8%" />
+            </div>
+            <p className="mt-4 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+              These are gain amounts, not sale proceeds. Cost basis, filing status, future income, state tax, AMT, and qualified dividends can move the answer—because tax law objects to joy and round numbers.
+            </p>
+          </CardContent>
+        </Card>
+
+        <div id="income-snapshot" className="scroll-mt-6">
+          <PayStubUpload />
+        </div>
+
+        <section className="mb-6 overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950" aria-labelledby="rsu-reconciliation-title">
+          <div className="border-b border-zinc-100 px-5 py-4 dark:border-zinc-900">
+            <h2 id="rsu-reconciliation-title" className="text-sm font-semibold">RSU and payroll reconciliation</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+              {payrollCoverageDate
+                ? `Your pay stub covers compensation through ${payrollCoverageDate}. Vests through that date stay inside YTD wages; only later vests are added.`
+                : "No current pay stub is setting the payroll cutoff, so confirmed and forecast vests are derived from the equity schedule."}
+              {Object.keys(rsuPriceEstimate).length > 0
+                ? ` Pending vests use connected planning prices (${Object.entries(rsuPriceEstimate).map(([ticker, price]) => `${ticker} ${formatCurrency(price)}`).join(", ")}) until actual FMV arrives.`
+                : ""}
+            </p>
+          </div>
+          <dl className="grid gap-px bg-zinc-100 sm:grid-cols-2 lg:grid-cols-4 dark:bg-zinc-900">
+            {[
+              { label: "Inside pay-stub wages", value: projection.ytdRsuVestIncome, detail: latestSnapshot?.rsuIncomeIsExplicit ? "Explicit payroll component, not added twice" : "Not isolated by payroll; YTD gross remains authoritative", unknown: Boolean(latestSnapshot && !latestSnapshot.rsuIncomeIsExplicit) },
+              { label: "Confirmed after cutoff", value: projection.rsuIncomeAfterSnapshot, detail: "Added from vested shares × FMV" },
+              { label: "Future vest estimate", value: projection.upcomingRsuIncome, detail: "Added once to projected income" },
+              { label: "Missing a usable FMV", value: projection.unpricedRsuShares, detail: `${projection.unpricedRsuEvents} vest event${projection.unpricedRsuEvents === 1 ? "" : "s"} excluded`, warning: projection.unpricedRsuEvents > 0 },
+            ].map((item) => (
+              <div key={item.label} className="bg-white px-5 py-4 dark:bg-zinc-950">
+                <dt className="text-xs text-zinc-500 dark:text-zinc-400">{item.label}</dt>
+                <dd className={`mt-1 text-xl font-semibold tabular-nums ${item.warning ? "text-amber-700 dark:text-amber-400" : "text-zinc-900 dark:text-zinc-100"}`}>
+                  {item.unknown ? "Not isolated" : item.label === "Missing a usable FMV" ? `${item.value.toFixed(2)} shares` : formatCurrency(item.value)}
+                </dd>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{item.detail}</p>
+              </div>
+            ))}
+          </dl>
+          {projection.unpricedRsuEvents > 0 ? (
+            <p role="alert" className="border-t border-amber-200 bg-amber-50 px-5 py-3 text-xs leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
+              Add FMV-at-vest or a planning price for the missing events. Basis excluded them instead of inventing income, a rare moment of restraint in both software and NVIDIA compensation.
+            </p>
+          ) : null}
+        </section>
 
         <div className="grid gap-6 md:grid-cols-2">
           <Card>
@@ -182,13 +248,15 @@ export default async function TaxPage() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card id="s-corp-profile" className="scroll-mt-6">
             <CardHeader>
-              <CardTitle>S-Corp profile</CardTitle>
+              <CardTitle>{physicianMode ? "Practice income" : "S-Corp profile"}</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="mb-3 text-xs text-zinc-500">
-                Optional — fill out if you operate through an S-Corp.
+                {physicianMode
+                  ? "Add the corporation that receives clinical income and runs your owner payroll."
+                  : "Optional. Fill this out if you operate through an S-Corp."}
               </p>
               <form action={upsertSCorpProfile} className="space-y-3">
                 <div>
@@ -197,7 +265,7 @@ export default async function TaxPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="annualRevenue">Annual revenue</Label>
+                    <Label htmlFor="annualRevenue">{physicianMode ? "Expected clinical revenue" : "Annual revenue"}</Label>
                     <Input id="annualRevenue" name="annualRevenue" type="number" step="0.01" defaultValue={data.sCorpProfile?.annualRevenue ?? ""} className="mt-1" />
                   </div>
                   <div>
@@ -207,7 +275,7 @@ export default async function TaxPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="w2SalaryFromCorp">W-2 salary from corp</Label>
+                    <Label htmlFor="w2SalaryFromCorp">{physicianMode ? "Owner payroll salary" : "W-2 salary from corp"}</Label>
                     <Input id="w2SalaryFromCorp" name="w2SalaryFromCorp" type="number" step="0.01" defaultValue={data.sCorpProfile?.w2SalaryFromCorp ?? ""} className="mt-1" />
                   </div>
                   <div>
@@ -226,13 +294,13 @@ export default async function TaxPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>YTD W-2 snapshot</CardTitle>
+              <CardTitle>Manual income snapshot</CardTitle>
             </CardHeader>
             <CardContent>
               <p className="mb-3 text-xs text-zinc-500">
                 Add a snapshot from your latest paycheck to project from. You can add multiple per year.
               </p>
-              <form action={addW2Snapshot} className="space-y-3">
+              <form action={addIncomeSnapshot} className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label htmlFor="taxYear">Tax year</Label>
@@ -263,7 +331,7 @@ export default async function TaxPage() {
                     <Input id="ytdBonuses" name="ytdBonuses" type="number" step="0.01" className="mt-1" />
                   </div>
                 </div>
-                <Button type="submit" size="sm">Add snapshot</Button>
+                  <Button type="submit" size="sm">Add manual snapshot</Button>
               </form>
             </CardContent>
           </Card>
@@ -272,7 +340,7 @@ export default async function TaxPage() {
         {data.w2Snapshots.length > 0 && (
           <Card className="mt-6">
             <CardHeader>
-              <CardTitle>W-2 snapshot history</CardTitle>
+              <CardTitle>Income snapshot history</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -281,6 +349,7 @@ export default async function TaxPage() {
                     <tr className="border-b border-zinc-200 dark:border-zinc-800">
                       <th className="text-left py-2 pr-4">Date</th>
                       <th className="text-left py-2 px-4">Year</th>
+                      <th className="text-left py-2 px-4">Employer</th>
                       <th className="text-right py-2 px-4">YTD wages</th>
                       <th className="text-right py-2 px-4">RSU income</th>
                       <th className="text-right py-2 px-4">Bonuses</th>
@@ -292,6 +361,7 @@ export default async function TaxPage() {
                       <tr key={s.id} className="border-b border-zinc-100 dark:border-zinc-900">
                         <td className="py-2 pr-4">{new Date(s.snapshotDate).toISOString().slice(0, 10)}</td>
                         <td className="py-2 px-4">{s.taxYear}</td>
+                        <td className="py-2 px-4">{s.employerName ?? (s.source === "DOCUMENT_UPLOAD" ? "Legacy W-2" : s.source === "PAY_STUB_UPLOAD" ? "Imported pay stub" : "Manual snapshot")}</td>
                         <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(s.ytdWages)}</td>
                         <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(s.ytdRsuVestIncome)}</td>
                         <td className="py-2 px-4 text-right tabular-nums">{formatCurrency(s.ytdBonuses)}</td>

@@ -55,7 +55,8 @@ export async function createRsuGrant(formData: FormData) {
 }
 
 export async function deleteRsuGrant(grantId: string) {
-  await prisma.rsuGrant.delete({ where: { id: grantId } });
+  const userId = await getCurrentUserId();
+  await prisma.rsuGrant.deleteMany({ where: { id: grantId, userId } });
   revalidatePath("/equity");
   revalidatePath("/");
 }
@@ -67,14 +68,20 @@ export async function markVestVested(
   vestEventId: string,
   formData: FormData,
 ) {
+  const userId = await getCurrentUserId();
   const fmv = parseFloat((formData.get("fmv") as string) || "0");
   const accountId = (formData.get("accountId") as string) || null;
 
-  const vest = await prisma.vestEvent.findUnique({
-    where: { id: vestEventId },
+  const vest = await prisma.vestEvent.findFirst({
+    where: { id: vestEventId, grant: { userId } },
     include: { grant: true },
   });
   if (!vest) return;
+
+  if (accountId) {
+    const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
+    if (!account) return;
+  }
 
   await prisma.vestEvent.update({
     where: { id: vestEventId },

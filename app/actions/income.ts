@@ -1,10 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/user";
-import { FilingStatus } from "@prisma/client";
+import { FilingStatus, PayFrequency } from "@prisma/client";
 
 export async function upsertPaycheckProfile(formData: FormData) {
   const userId = await getCurrentUserId();
@@ -12,7 +11,7 @@ export async function upsertPaycheckProfile(formData: FormData) {
     where: { userId },
     update: {
       annualSalary: parseFloat((formData.get("annualSalary") as string) || "0"),
-      payFrequency: (formData.get("payFrequency") as any) || "BIWEEKLY",
+      payFrequency: (formData.get("payFrequency") as PayFrequency) || "BIWEEKLY",
       expectedBonus: parseFloat((formData.get("expectedBonus") as string) || "0") || null,
       bonusMonth: parseInt((formData.get("bonusMonth") as string) || "0", 10) || null,
       k401Contribution: parseFloat((formData.get("k401Contribution") as string) || "0") || null,
@@ -22,7 +21,7 @@ export async function upsertPaycheckProfile(formData: FormData) {
     create: {
       userId,
       annualSalary: parseFloat((formData.get("annualSalary") as string) || "0"),
-      payFrequency: (formData.get("payFrequency") as any) || "BIWEEKLY",
+      payFrequency: (formData.get("payFrequency") as PayFrequency) || "BIWEEKLY",
       expectedBonus: parseFloat((formData.get("expectedBonus") as string) || "0") || null,
       bonusMonth: parseInt((formData.get("bonusMonth") as string) || "0", 10) || null,
       k401Contribution: parseFloat((formData.get("k401Contribution") as string) || "0") || null,
@@ -60,8 +59,9 @@ export async function upsertSCorpProfile(formData: FormData) {
   revalidatePath("/");
 }
 
-export async function addW2Snapshot(formData: FormData) {
+export async function addIncomeSnapshot(formData: FormData) {
   const userId = await getCurrentUserId();
+  const rawRsuIncome = String(formData.get("ytdRsuVestIncome") ?? "").trim();
   await prisma.w2Snapshot.create({
     data: {
       userId,
@@ -71,7 +71,8 @@ export async function addW2Snapshot(formData: FormData) {
       ytdFederalWithheld: parseFloat((formData.get("ytdFederalWithheld") as string) || "0") || 0,
       ytdStateWithheld: parseFloat((formData.get("ytdStateWithheld") as string) || "0") || 0,
       ytdBonuses: parseFloat((formData.get("ytdBonuses") as string) || "0") || 0,
-      ytdRsuVestIncome: parseFloat((formData.get("ytdRsuVestIncome") as string) || "0") || 0,
+      ytdRsuVestIncome: parseFloat(rawRsuIncome || "0") || 0,
+      rsuIncomeIsExplicit: rawRsuIncome !== "",
     },
   });
   revalidatePath("/tax");

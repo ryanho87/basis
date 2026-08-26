@@ -1,4 +1,4 @@
-// 2025 federal tax engine — a deliberately simplified model that captures
+// Year-aware federal tax engine — a deliberately simplified model that captures
 // the dynamics that matter for planning: ordinary brackets, LTCG stacking
 // on top of ordinary income, and NIIT exposure.
 //
@@ -10,11 +10,12 @@
 
 import { FilingStatus } from "@prisma/client";
 
-// ---------- 2025 brackets ----------
+// ---------- Brackets ----------
 
 type Bracket = { rate: number; threshold: number };
 
-// Ordinary income brackets (single + MFJ — others map down to single for v1).
+// 2025 values retained for historical scenarios. 2026 values come from IRS
+// Revenue Procedure 2025-32.
 const ORDINARY_BRACKETS_2025: Record<string, Bracket[]> = {
   SINGLE: [
     { rate: 0.10, threshold: 0 },
@@ -36,6 +37,33 @@ const ORDINARY_BRACKETS_2025: Record<string, Bracket[]> = {
   ],
 };
 
+const ORDINARY_BRACKETS_2026: Record<FilingStatus, Bracket[]> = {
+  SINGLE: [
+    { rate: 0.10, threshold: 0 }, { rate: 0.12, threshold: 12400 },
+    { rate: 0.22, threshold: 50400 }, { rate: 0.24, threshold: 105700 },
+    { rate: 0.32, threshold: 201775 }, { rate: 0.35, threshold: 256225 },
+    { rate: 0.37, threshold: 640600 },
+  ],
+  MARRIED_FILING_JOINTLY: [
+    { rate: 0.10, threshold: 0 }, { rate: 0.12, threshold: 24800 },
+    { rate: 0.22, threshold: 100800 }, { rate: 0.24, threshold: 211400 },
+    { rate: 0.32, threshold: 403550 }, { rate: 0.35, threshold: 512450 },
+    { rate: 0.37, threshold: 768700 },
+  ],
+  MARRIED_FILING_SEPARATELY: [
+    { rate: 0.10, threshold: 0 }, { rate: 0.12, threshold: 12400 },
+    { rate: 0.22, threshold: 50400 }, { rate: 0.24, threshold: 105700 },
+    { rate: 0.32, threshold: 201775 }, { rate: 0.35, threshold: 256225 },
+    { rate: 0.37, threshold: 384350 },
+  ],
+  HEAD_OF_HOUSEHOLD: [
+    { rate: 0.10, threshold: 0 }, { rate: 0.12, threshold: 17700 },
+    { rate: 0.22, threshold: 67450 }, { rate: 0.24, threshold: 105700 },
+    { rate: 0.32, threshold: 201750 }, { rate: 0.35, threshold: 256200 },
+    { rate: 0.37, threshold: 640600 },
+  ],
+};
+
 // Long-term capital gains thresholds.
 const LTCG_BRACKETS_2025: Record<string, Bracket[]> = {
   SINGLE: [
@@ -50,11 +78,25 @@ const LTCG_BRACKETS_2025: Record<string, Bracket[]> = {
   ],
 };
 
+const LTCG_BRACKETS_2026: Record<FilingStatus, Bracket[]> = {
+  SINGLE: [{ rate: 0, threshold: 0 }, { rate: 0.15, threshold: 49450 }, { rate: 0.20, threshold: 545500 }],
+  MARRIED_FILING_JOINTLY: [{ rate: 0, threshold: 0 }, { rate: 0.15, threshold: 98900 }, { rate: 0.20, threshold: 613700 }],
+  MARRIED_FILING_SEPARATELY: [{ rate: 0, threshold: 0 }, { rate: 0.15, threshold: 49450 }, { rate: 0.20, threshold: 306850 }],
+  HEAD_OF_HOUSEHOLD: [{ rate: 0, threshold: 0 }, { rate: 0.15, threshold: 66200 }, { rate: 0.20, threshold: 579600 }],
+};
+
 const STANDARD_DEDUCTION_2025: Record<string, number> = {
-  SINGLE: 15000,
-  MARRIED_FILING_JOINTLY: 30000,
-  MARRIED_FILING_SEPARATELY: 15000,
-  HEAD_OF_HOUSEHOLD: 22500,
+  SINGLE: 15750,
+  MARRIED_FILING_JOINTLY: 31500,
+  MARRIED_FILING_SEPARATELY: 15750,
+  HEAD_OF_HOUSEHOLD: 23625,
+};
+
+const STANDARD_DEDUCTION_2026: Record<FilingStatus, number> = {
+  SINGLE: 16100,
+  MARRIED_FILING_JOINTLY: 32200,
+  MARRIED_FILING_SEPARATELY: 16100,
+  HEAD_OF_HOUSEHOLD: 24150,
 };
 
 // Net Investment Income Tax thresholds (modified AGI).
@@ -66,8 +108,7 @@ const NIIT_THRESHOLD: Record<string, number> = {
 };
 const NIIT_RATE = 0.038;
 
-// Map "less common" filing statuses down to closest match for bracket purposes.
-function bracketKey(status: FilingStatus): "SINGLE" | "MARRIED_FILING_JOINTLY" {
+function legacyBracketKey(status: FilingStatus): "SINGLE" | "MARRIED_FILING_JOINTLY" {
   return status === "MARRIED_FILING_JOINTLY" ? "MARRIED_FILING_JOINTLY" : "SINGLE";
 }
 
@@ -117,8 +158,9 @@ function ltcgTaxStacked(
 // ---------- Public API ----------
 
 export type TaxInputs = {
+  taxYear?: number;
   filingStatus: FilingStatus;
-  ordinaryIncome: number;   // wages, bonus, RSU vest income, STCG, S-Corp distribution, interest
+  ordinaryIncome: number;   // wages, bonus, RSU vest income, STCG, S-Corp pass-through income, interest
   longTermGains: number;    // realized LTCG (- LT losses)
   shortTermGains?: number;  // already folded into ordinaryIncome typically; here for clarity
   pretaxDeductions?: number; // 401k, HSA, etc.
@@ -151,15 +193,18 @@ export type TaxResult = {
 };
 
 export function computeTax(inputs: TaxInputs): TaxResult {
-  const { filingStatus, ordinaryIncome, longTermGains, pretaxDeductions = 0 } = inputs;
-  const key = bracketKey(filingStatus);
-  const stdDeduction = STANDARD_DEDUCTION_2025[filingStatus] ?? STANDARD_DEDUCTION_2025.SINGLE;
+  const { taxYear = new Date().getFullYear(), filingStatus, ordinaryIncome, longTermGains, pretaxDeductions = 0 } = inputs;
+  const use2026 = taxYear >= 2026;
+  const stdDeduction = use2026
+    ? STANDARD_DEDUCTION_2026[filingStatus]
+    : STANDARD_DEDUCTION_2025[filingStatus] ?? STANDARD_DEDUCTION_2025.SINGLE;
 
   const taxableOrdinary = Math.max(0, ordinaryIncome - pretaxDeductions - stdDeduction);
   const taxableLtcg = Math.max(0, longTermGains);
 
-  const ordBrackets = ORDINARY_BRACKETS_2025[key];
-  const ltcgBrackets = LTCG_BRACKETS_2025[key];
+  const key = legacyBracketKey(filingStatus);
+  const ordBrackets = use2026 ? ORDINARY_BRACKETS_2026[filingStatus] : ORDINARY_BRACKETS_2025[key];
+  const ltcgBrackets = use2026 ? LTCG_BRACKETS_2026[filingStatus] : LTCG_BRACKETS_2025[key];
 
   const ordinaryTax = taxFromBrackets(taxableOrdinary, ordBrackets);
   const ltcgTax = ltcgTaxStacked(taxableOrdinary, taxableLtcg, ltcgBrackets);
@@ -199,14 +244,8 @@ export function computeTax(inputs: TaxInputs): TaxResult {
   const ltcg15Threshold = ltcgBrackets[1]?.threshold ?? 0;
   const ltcg20Threshold = ltcgBrackets[2]?.threshold ?? 0;
   const ltcgRoomAt0 = Math.max(0, ltcg15Threshold - ltcgPosition);
-  // Headroom at 15% — only meaningful once we're past the 0% threshold
-  let ltcgRoomAt15 = 0;
-  if (ltcgPosition >= ltcg15Threshold) {
-    ltcgRoomAt15 = Math.max(0, ltcg20Threshold - ltcgPosition);
-  } else {
-    // Position hasn't reached 15% yet — full 15% band is ahead, plus 0% room
-    ltcgRoomAt15 = ltcg20Threshold - ltcg15Threshold;
-  }
+  // Total additional LTCG before any portion enters the 20% federal band.
+  const ltcgRoomAt15 = Math.max(0, ltcg20Threshold - ltcgPosition);
 
   return {
     taxableOrdinary,
@@ -240,7 +279,8 @@ export function estimateUnrealizedGainTaxRate() {
 }
 
 // Estimate ordinary income rate at withdrawal (used for traditional 401k discount).
-export function estimateOrdinaryWithdrawalRate(_filingStatus: FilingStatus) {
+export function estimateOrdinaryWithdrawalRate(filingStatus: FilingStatus) {
+  void filingStatus;
   // Conservative: assume 22% federal + 5% state at retirement.
   return 0.27;
 }

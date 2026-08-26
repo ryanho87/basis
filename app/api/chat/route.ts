@@ -1,5 +1,9 @@
 import { NextRequest } from "next/server";
-import { anthropic, CLAUDE_MODEL } from "@/lib/anthropic";
+import {
+  AI_GATEWAY_MODEL,
+  getAIGateway,
+  getAIGatewayConfigurationError,
+} from "@/lib/ai-gateway";
 import { buildFinancialContext, ASSISTANT_SYSTEM_PROMPT } from "@/lib/llm-context";
 import { getCurrentUser } from "@/lib/user";
 import { prisma } from "@/lib/prisma";
@@ -11,13 +15,11 @@ type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as { messages: ChatMessage[]; threadId?: string };
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const gatewayError = getAIGatewayConfigurationError();
+  if (gatewayError) {
     return new Response(
-      JSON.stringify({
-        error:
-          "ANTHROPIC_API_KEY is not set. Add it to .env and restart the dev server.",
-      }),
-      { status: 500, headers: { "content-type": "application/json" } },
+      JSON.stringify({ error: gatewayError }),
+      { status: 503, headers: { "content-type": "application/json" } },
     );
   }
 
@@ -31,6 +33,14 @@ export async function POST(req: NextRequest) {
       data: { userId: user.id, kind: "GENERAL", title: body.messages[0]?.content?.slice(0, 60) ?? "New chat" },
     });
     threadId = thread.id;
+  } else {
+    const ownedThread = await prisma.chatThread.findFirst({
+      where: { id: threadId, userId: user.id },
+      select: { id: true },
+    });
+    if (!ownedThread) {
+      return Response.json({ error: "Chat thread not found" }, { status: 404 });
+    }
   }
   const lastUserMsg = body.messages[body.messages.length - 1];
   if (lastUserMsg?.role === "user") {
@@ -41,8 +51,8 @@ export async function POST(req: NextRequest) {
 
   const systemPrompt = `${ASSISTANT_SYSTEM_PROMPT}\n\n---\n\n${context}`;
 
-  const stream = await anthropic.messages.stream({
-    model: CLAUDE_MODEL,
+  const stream = await getAIGateway().messages.stream({
+    model: AI_GATEWAY_MODEL,
     max_tokens: 2048,
     system: systemPrompt,
     messages: body.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -66,9 +76,10 @@ export async function POST(req: NextRequest) {
         });
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done", threadId })}\n\n`));
         controller.close();
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "AI Gateway stream failed";
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`),
+          encoder.encode(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`),
         );
         controller.close();
       }

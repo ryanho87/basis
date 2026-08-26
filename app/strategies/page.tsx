@@ -5,10 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { setStrategyStatus, deleteStrategy } from "@/app/actions/strategies";
+import type { SuggestionStatus } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
 
-const SECTIONS: Array<{ status: any; label: string }> = [
+const SECTIONS: Array<{ status: SuggestionStatus; label: string }> = [
   { status: "NEW", label: "New" },
   { status: "ACKNOWLEDGED", label: "Reviewing" },
   { status: "ACTIONED", label: "Actioned" },

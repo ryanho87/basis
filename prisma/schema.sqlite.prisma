@@ -1,0 +1,844 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../app/generated/prisma-sqlite"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// A financial profile is intentionally separate from its authentication
+// identity. This keeps provider accounts and login accounts in different
+// namespaces and gives household sharing a clean boundary later.
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Tax / filing context
+  filingStatus              FilingStatus @default(SINGLE)
+  state                     String?
+  profileType               ProfileType  @default(UNCLASSIFIED)
+  // Persona controls presentation; capabilities control which financial
+  // engines and workflows apply. Kept as validated strings so new use cases
+  // do not require a database enum migration for every profession.
+  primaryPersona            String?
+  financialCapabilitiesJson String       @default("[]")
+
+  // Onboarding output — free-text summary of user's situation that the LLM produced.
+  onboardingSummary String?
+  primaryConcern    String?
+  onboardedAt       DateTime?
+
+  accounts                 Account[]
+  rsuGrants                RsuGrant[]
+  manualAssets             ManualAsset[]
+  liabilities              Liability[]
+  studentLoans             StudentLoan[]
+  w2Snapshots              W2Snapshot[]
+  paycheckProfile          PaycheckProfile?
+  sCorpProfile             SCorpProfile?
+  plannedSales             PlannedSale[]
+  plaidItems               PlaidItem[]
+  plaidDeveloperCredential PlaidDeveloperCredential?
+  coinbaseConnection       CoinbaseConnection?
+  netWorthSnapshots        NetWorthSnapshot[]
+  chatThreads              ChatThread[]
+  strategySuggestions      StrategySuggestion[]
+  authIdentity             AuthUser?
+}
+
+// ---------- Authentication ----------
+
+model AuthUser {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  profileUserId String? @unique
+  profile       User?   @relation(fields: [profileUserId], references: [id], onDelete: Cascade)
+
+  sessions AuthSession[]
+  accounts AuthAccount[]
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model AuthAccount {
+  id                    String    @id @default(cuid())
+  issuer                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  userId String
+  user   AuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([issuer, accountId])
+  @@index([userId])
+}
+
+model AuthVerification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model Jwks {
+  id         String   @id
+  publicKey  String
+  privateKey String
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime?
+  alg        String?
+  crv        String?
+}
+
+model AuthInvite {
+  id            String    @id @default(cuid())
+  email         String
+  name          String?
+  tokenHash     String    @unique
+  profileUserId String
+  expiresAt     DateTime
+  acceptedAt    DateTime?
+  canceledAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([email, acceptedAt])
+  @@index([profileUserId])
+}
+
+// ---------- External financial connections ----------
+
+model PlaidDeveloperCredential {
+  id                String      @id @default(cuid())
+  userId            String      @unique
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientIdEncrypted String
+  secretEncrypted   String
+  environment       String
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  items             PlaidItem[]
+}
+
+model PlaidItem {
+  id                    String                    @id @default(cuid())
+  userId                String
+  user                  User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  developerCredentialId String?
+  developerCredential   PlaidDeveloperCredential? @relation(fields: [developerCredentialId], references: [id], onDelete: Restrict)
+  itemId                String                    @unique
+  accessTokenEncrypted  String
+  institutionId         String?
+  institutionName       String?
+  status                PlaidItemStatus           @default(ACTIVE)
+  consentExpiresAt      DateTime?
+  lastSyncedAt          DateTime?
+  errorCode             String?
+  errorMessage          String?
+  transactionsCursor    String?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  accounts              PlaidAccount[]
+  syncRuns              PlaidSyncRun[]
+
+  @@index([userId])
+  @@index([developerCredentialId])
+  @@index([institutionId])
+}
+
+model PlaidAccount {
+  id                     String             @id @default(cuid())
+  plaidItemId            String
+  plaidItem              PlaidItem          @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+  externalAccountId      String             @unique
+  persistentAccountId    String?
+  name                   String
+  officialName           String?
+  mask                   String?
+  type                   String
+  subtype                String?
+  currentBalance         Float?
+  availableBalance       Float?
+  creditLimit            Float?
+  isoCurrencyCode        String?
+  unofficialCurrencyCode String?
+  isActive               Boolean            @default(true)
+  lastSyncedAt           DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  holdings               PlaidHolding[]
+  liability              PlaidLiability?
+  transactions           PlaidTransaction[]
+
+  @@index([plaidItemId])
+  @@index([type, subtype])
+}
+
+model PlaidTransaction {
+  id                     String           @id @default(cuid())
+  plaidAccountId         String
+  plaidAccount           PlaidAccount     @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  externalTransactionId  String           @unique
+  pendingTransactionId   String?
+  date                   DateTime
+  authorizedDate         DateTime?
+  datetime               DateTime?
+  name                   String
+  merchantName           String?
+  amount                 Float
+  isoCurrencyCode        String?
+  unofficialCurrencyCode String?
+  paymentChannel         String?
+  pending                Boolean          @default(false)
+  plaidPrimaryCategory   String?
+  plaidDetailedCategory  String?
+  plaidConfidenceLevel   String?
+  originalDescription    String?
+  logoUrl                String?
+  website                String?
+  expenseTreatment       ExpenseTreatment @default(UNREVIEWED)
+  expenseCategory        ExpenseCategory?
+  deductiblePercent      Float?
+  userNote               String?
+  isRemoved              Boolean          @default(false)
+  lastSyncedAt           DateTime
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  @@index([plaidAccountId, date])
+  @@index([expenseTreatment, date])
+  @@index([expenseCategory, date])
+}
+
+model PlaidSecurity {
+  id                     String         @id @default(cuid())
+  externalSecurityId     String         @unique
+  institutionSecurityId  String?
+  institutionId          String?
+  tickerSymbol           String?
+  name                   String?
+  type                   String?
+  subtype                String?
+  isCashEquivalent       Boolean?
+  closePrice             Float?
+  closePriceAsOf         DateTime?
+  updateDatetime         DateTime?
+  isoCurrencyCode        String?
+  unofficialCurrencyCode String?
+  marketIdentifierCode   String?
+  sector                 String?
+  industry               String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  holdings               PlaidHolding[]
+}
+
+model PlaidHolding {
+  id                       String        @id @default(cuid())
+  plaidAccountId           String
+  plaidAccount             PlaidAccount  @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  plaidSecurityId          String
+  plaidSecurity            PlaidSecurity @relation(fields: [plaidSecurityId], references: [id], onDelete: Restrict)
+  quantity                 Float
+  institutionPrice         Float
+  institutionPriceAsOf     DateTime?
+  institutionPriceDatetime DateTime?
+  institutionValue         Float
+  aggregateCostBasis       Float?
+  vestedQuantity           Float?
+  vestedValue              Float?
+  isoCurrencyCode          String?
+  unofficialCurrencyCode   String?
+  isActive                 Boolean       @default(true)
+  lastSyncedAt             DateTime
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+  taxLots                  PlaidTaxLot[]
+
+  @@unique([plaidAccountId, plaidSecurityId])
+  @@index([plaidSecurityId])
+}
+
+model PlaidTaxLot {
+  id                       String       @id @default(cuid())
+  plaidHoldingId           String
+  plaidHolding             PlaidHolding @relation(fields: [plaidHoldingId], references: [id], onDelete: Cascade)
+  lotKey                   String
+  institutionLotId         String?
+  originalPurchaseDatetime DateTime?
+  quantity                 Float?
+  purchasePrice            Float?
+  costBasis                Float?
+  currentValue             Float?
+  positionType             String?
+  createdAt                DateTime     @default(now())
+  updatedAt                DateTime     @updatedAt
+
+  @@unique([plaidHoldingId, lotKey])
+}
+
+model PlaidLiability {
+  id             String       @id @default(cuid())
+  plaidAccountId String       @unique
+  plaidAccount   PlaidAccount @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  type           String
+  detailsJson    String
+  lastSyncedAt   DateTime
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model PlaidSyncRun {
+  id                String          @id @default(cuid())
+  plaidItemId       String
+  plaidItem         PlaidItem       @relation(fields: [plaidItemId], references: [id], onDelete: Cascade)
+  status            PlaidSyncStatus @default(RUNNING)
+  accountsCount     Int             @default(0)
+  holdingsCount     Int             @default(0)
+  taxLotsCount      Int             @default(0)
+  liabilitiesCount  Int             @default(0)
+  transactionsCount Int             @default(0)
+  warningsJson      String?
+  errorCode         String?
+  errorMessage      String?
+  startedAt         DateTime        @default(now())
+  completedAt       DateTime?
+
+  @@index([plaidItemId, startedAt])
+}
+
+model CoinbaseConnection {
+  id           String                   @id @default(cuid())
+  userId       String                   @unique
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status       CoinbaseConnectionStatus @default(ACTIVE)
+  lastSyncedAt DateTime?
+  errorMessage String?
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  accounts     CoinbaseAccount[]
+}
+
+model CoinbaseAccount {
+  id                   String             @id @default(cuid())
+  coinbaseConnectionId String
+  coinbaseConnection   CoinbaseConnection @relation(fields: [coinbaseConnectionId], references: [id], onDelete: Cascade)
+  externalAccountId    String
+  name                 String
+  currency             String
+  accountType          String
+  quantity             Float
+  holdQuantity         Float              @default(0)
+  priceUsd             Float?
+  valueUsd             Float?
+  isActive             Boolean            @default(true)
+  lastSyncedAt         DateTime
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@unique([coinbaseConnectionId, externalAccountId])
+  @@index([coinbaseConnectionId])
+  @@index([currency])
+}
+
+enum CoinbaseConnectionStatus {
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+model NetWorthSnapshot {
+  id                    String                 @id @default(cuid())
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dateKey               String
+  capturedAt            DateTime               @default(now())
+  source                NetWorthSnapshotSource
+  grossAssets           Float
+  totalLiabilities      Float
+  netWorth              Float
+  estimatedTaxLiability Float
+  afterTaxNetWorth      Float
+  plaidAssets           Float
+  plaidLiabilities      Float
+  coinbaseAssets        Float                  @default(0)
+  manualAssets          Float
+  manualLiabilities     Float
+  basisCoverage         Float?
+
+  @@unique([userId, dateKey])
+  @@index([userId, capturedAt])
+}
+
+enum NetWorthSnapshotSource {
+  PLAID_SYNC
+  COINBASE_SYNC
+  DASHBOARD
+  MANUAL
+}
+
+enum PlaidSyncStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum PlaidItemStatus {
+  ACTIVE
+  LOGIN_REQUIRED
+  ERROR
+  DISCONNECTED
+}
+
+enum ExpenseTreatment {
+  UNREVIEWED
+  BUSINESS
+  PERSONAL
+  MIXED
+  EXCLUDED
+}
+
+enum ExpenseCategory {
+  ADVERTISING
+  AUTO
+  EDUCATION
+  INSURANCE
+  MEALS
+  MEDICAL_SUPPLIES
+  OFFICE
+  PAYROLL
+  PROFESSIONAL_FEES
+  RENT
+  SOFTWARE
+  TAXES
+  TRAVEL
+  UTILITIES
+  TRANSFER
+  OTHER
+}
+
+enum FilingStatus {
+  SINGLE
+  MARRIED_FILING_JOINTLY
+  MARRIED_FILING_SEPARATELY
+  HEAD_OF_HOUSEHOLD
+}
+
+enum ProfileType {
+  UNCLASSIFIED
+  TECH_EMPLOYEE // W-2 + RSUs/equity
+  W2_PROFESSIONAL // Plain W-2, no equity
+  S_CORP_OWNER // S-Corp owner with W-2 from own corp + distributions
+  SELF_EMPLOYED // Sole prop / 1099 / freelance
+  MIXED // Multiple income types
+}
+
+// ---------- Accounts & holdings ----------
+
+model Account {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  institution String?
+  type        AccountType
+  // Cash balance for checking/savings, or non-lot value for tax-advantaged accounts.
+  cashBalance Float       @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  lots         AssetLot[]
+  positions    HoldingPosition[]
+  transactions Transaction[]
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  TAXABLE_BROKERAGE
+  K401_TRADITIONAL
+  K401_ROTH
+  IRA_TRADITIONAL
+  IRA_ROTH
+  HSA
+  CRYPTO
+  OTHER
+}
+
+// Lot-level cost basis — used for taxable accounts and crypto.
+model AssetLot {
+  id                String          @id @default(cuid())
+  accountId         String
+  account           Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ticker            String
+  name              String?
+  shares            Float
+  costBasisPerShare Float
+  acquiredAt        DateTime
+  acquisitionType   AcquisitionType @default(PURCHASE)
+  notes             String?
+  // For RSU lots, link back to the originating vest event (optional).
+  vestEventId       String?         @unique
+  vestEvent         VestEvent?      @relation(fields: [vestEventId], references: [id])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+enum AcquisitionType {
+  PURCHASE
+  RSU_VEST
+  ESPP
+  DIVIDEND_REINVESTMENT
+  GIFT
+  INHERITANCE
+  TRANSFER_IN
+}
+
+// Tax-advantaged account holdings — no lot tracking, just current position value.
+model HoldingPosition {
+  id           String   @id @default(cuid())
+  accountId    String
+  account      Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  ticker       String
+  name         String?
+  shares       Float
+  currentValue Float // user-entered or fetched
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Imported transaction history (for taxable / crypto accounts).
+model Transaction {
+  id            String          @id @default(cuid())
+  accountId     String
+  account       Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date          DateTime
+  type          TransactionType
+  ticker        String?
+  shares        Float?
+  pricePerShare Float?
+  totalAmount   Float
+  fees          Float           @default(0)
+  notes         String?
+  createdAt     DateTime        @default(now())
+}
+
+enum TransactionType {
+  BUY
+  SELL
+  DIVIDEND
+  INTEREST
+  TRANSFER_IN
+  TRANSFER_OUT
+  FEE
+  OTHER
+}
+
+// ---------- RSU grants & vesting ----------
+
+model RsuGrant {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticker      String
+  company     String?
+  grantDate   DateTime
+  totalShares Float
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  vestEvents VestEvent[]
+}
+
+model VestEvent {
+  id        String     @id @default(cuid())
+  grantId   String
+  grant     RsuGrant   @relation(fields: [grantId], references: [id], onDelete: Cascade)
+  vestDate  DateTime
+  shares    Float
+  fmvAtVest Float? // null until vested; set on vest to lock cost basis
+  status    VestStatus @default(PENDING)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // When marked vested, an AssetLot is created and linked here.
+  lot AssetLot?
+}
+
+enum VestStatus {
+  PENDING
+  VESTED
+  CANCELED
+}
+
+// ---------- Manual assets & liabilities ----------
+
+model ManualAsset {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  type          ManualAssetType
+  currentValue  Float
+  purchasePrice Float?
+  purchaseDate  DateTime?
+  notes         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+enum ManualAssetType {
+  REAL_ESTATE
+  VEHICLE
+  COLLECTIBLE
+  PRIVATE_EQUITY
+  OTHER
+}
+
+model Liability {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  type           LiabilityType
+  currentBalance Float
+  interestRate   Float?
+  monthlyPayment Float?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+enum LiabilityType {
+  MORTGAGE
+  AUTO_LOAN
+  CREDIT_CARD
+  PERSONAL_LOAN
+  OTHER
+}
+
+model StudentLoan {
+  id                String          @id @default(cuid())
+  userId            String
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  servicer          String?
+  loanType          StudentLoanType
+  balance           Float
+  interestRate      Float
+  monthlyPayment    Float?
+  repaymentPlan     RepaymentPlan?
+  pslfEligible      Boolean         @default(false)
+  pslfPaymentsCount Int? // count toward 120 qualifying payments
+  notes             String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+enum StudentLoanType {
+  FEDERAL_DIRECT
+  FEDERAL_PLUS
+  PRIVATE
+  OTHER
+}
+
+enum RepaymentPlan {
+  STANDARD
+  GRADUATED
+  IBR
+  PAYE
+  SAVE
+  ICR
+  REFINANCED
+}
+
+// ---------- Income profiles ----------
+
+model PaycheckProfile {
+  id               String       @id @default(cuid())
+  userId           String       @unique
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  annualSalary     Float
+  payFrequency     PayFrequency
+  expectedBonus    Float?
+  bonusMonth       Int? // 1-12, when bonus typically lands
+  // Pre-tax deduction estimates (per year)
+  k401Contribution Float?
+  hsaContribution  Float?
+  otherPretax      Float?
+  notes            String?
+  updatedAt        DateTime     @updatedAt
+}
+
+enum PayFrequency {
+  WEEKLY
+  BIWEEKLY
+  SEMIMONTHLY
+  MONTHLY
+}
+
+// For S-Corp owners — tracks the corp's revenue and the W-2/distribution split.
+model SCorpProfile {
+  id                    String   @id @default(cuid())
+  userId                String   @unique
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  corpName              String?
+  annualRevenue         Float
+  operatingExpenses     Float    @default(0)
+  w2SalaryFromCorp      Float // payroll taxes apply
+  projectedDistribution Float? // K-1, no payroll tax
+  // Self-employed retirement vehicle context
+  solo401kContribution  Float?
+  sepIraContribution    Float?
+  updatedAt             DateTime @updatedAt
+}
+
+// Point-in-time YTD income snapshot. The legacy name is retained so existing
+// W-2 imports and migrations remain compatible.
+model W2Snapshot {
+  id                  String           @id @default(cuid())
+  userId              String
+  user                User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taxYear             Int
+  snapshotDate        DateTime
+  ytdWages            Float
+  ytdFederalWithheld  Float            @default(0)
+  ytdStateWithheld    Float            @default(0)
+  ytdSocialSecurity   Float            @default(0)
+  ytdMedicare         Float            @default(0)
+  ytdBonuses          Float            @default(0)
+  ytdRsuVestIncome    Float            @default(0)
+  rsuIncomeIsExplicit Boolean          @default(false)
+  source              W2SnapshotSource @default(MANUAL)
+  employerName        String?
+  socialSecurityWages Float?
+  medicareWages       Float?
+  stateCode           String?
+  stateWages          Float?
+  localWages          Float?
+  localWithheld       Float?
+  box12Json           String?
+  payPeriodStart      DateTime?
+  payPeriodEnd        DateTime?
+  currentGrossPay     Float?
+  currentNetPay       Float?
+  ytdNetPay           Float?
+  ytdPretaxDeductions Float            @default(0)
+  ytdRetirement       Float            @default(0)
+  ytdHsa              Float            @default(0)
+  payFrequency        String?
+  documentHash        String?
+  notes               String?
+  createdAt           DateTime         @default(now())
+
+  @@index([userId, taxYear])
+  @@index([userId, documentHash])
+}
+
+enum W2SnapshotSource {
+  MANUAL
+  DOCUMENT_UPLOAD
+  PAY_STUB_UPLOAD
+}
+
+// ---------- Scenario modeling ----------
+
+model PlannedSale {
+  id                     String   @id @default(cuid())
+  userId                 String
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticker                 String
+  shares                 Float
+  // Either specific lot IDs (JSON array) or null = FIFO
+  lotSelection           String?
+  estimatedPricePerShare Float
+  plannedDate            DateTime
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+// ---------- LLM artifacts ----------
+
+model ChatThread {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String?
+  kind      ChatKind @default(GENERAL)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages ChatMessage[]
+}
+
+enum ChatKind {
+  ONBOARDING
+  GENERAL
+  SCENARIO
+}
+
+model ChatMessage {
+  id        String     @id @default(cuid())
+  threadId  String
+  thread    ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role      String // 'user' | 'assistant' | 'system'
+  content   String
+  createdAt DateTime   @default(now())
+}
+
+// Strategies surfaced by the LLM that the user can review.
+model StrategySuggestion {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  summary   String
+  category  String? // e.g., 'tax', 'retirement', 'real_estate', 'debt'
+  detail    String? // longer LLM-generated explanation
+  status    SuggestionStatus @default(NEW)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+enum SuggestionStatus {
+  NEW
+  ACKNOWLEDGED
+  DISMISSED
+  ACTIONED
+}

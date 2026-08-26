@@ -6,7 +6,7 @@ export default function ChatPage() {
     <div>
       <PageHeader
         title="Chat"
-        description="Your financial planning assistant — knows your numbers"
+        description="Knows your numbers and has notes"
       />
       <PageBody>
         <ChatInterface />

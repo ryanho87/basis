@@ -1,20 +1,25 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/user";
-import { computeNetWorth, projectIncome } from "@/lib/finance";
+import { projectIncome } from "@/lib/finance";
+import { getRsuPriceEstimates } from "@/lib/rsu-pricing";
 import { computeTax } from "@/lib/tax";
+import { captureNetWorthSnapshot } from "@/lib/net-worth";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { Stat } from "@/components/stat";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
-import { Button } from "@/components/ui/button";
 import { ArrowRight, AlertTriangle, Sparkles } from "lucide-react";
+import { NetWorthHistory } from "@/components/net-worth-history";
+import { derivePersona } from "@/lib/profile-capabilities";
+import { buildPhysicianMoneyPlan } from "@/lib/physician-planning";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await getCurrentUser();
+  const taxYear = new Date().getFullYear();
   const data = await prisma.user.findUnique({
     where: { id: user.id },
     include: {
@@ -25,48 +30,65 @@ export default async function DashboardPage() {
       rsuGrants: { include: { vestEvents: true } },
       paycheckProfile: true,
       sCorpProfile: true,
-      w2Snapshots: { orderBy: { snapshotDate: "desc" }, take: 1 },
+      w2Snapshots: { where: { taxYear }, orderBy: { snapshotDate: "desc" }, take: 1 },
       strategySuggestions: { where: { status: "NEW" }, take: 5 },
     },
   });
   if (!data) return null;
 
   const onboarded = !!data.onboardedAt;
+  const persona = derivePersona(data.primaryPersona, data.profileType);
+  const physicianMode = persona === "PHYSICIAN";
+  const { value: nw } = await captureNetWorthSnapshot(user.id, "DASHBOARD");
+  const snapshotRows = await prisma.netWorthSnapshot.findMany({
+    where: { userId: user.id },
+    select: { dateKey: true, netWorth: true, afterTaxNetWorth: true },
+    orderBy: { dateKey: "desc" },
+    take: 365,
+  });
+  const snapshots = snapshotRows.reverse();
   const hasAnyData =
+    nw.connectedAccountsCount > 0 ||
     data.accounts.length > 0 ||
     data.manualAssets.length > 0 ||
     data.rsuGrants.length > 0;
 
-  const nw = computeNetWorth({
-    accounts: data.accounts,
-    manualAssets: data.manualAssets,
-    liabilities: data.liabilities,
-    studentLoans: data.studentLoans,
-    filingStatus: data.filingStatus,
-  });
-
+  const rsuPriceEstimate = await getRsuPriceEstimates(user.id, data.rsuGrants.map((grant) => grant.ticker));
   const projection = projectIncome({
-    taxYear: new Date().getFullYear(),
+    taxYear,
     paycheck: data.paycheckProfile,
     sCorp: data.sCorpProfile,
     latestW2: data.w2Snapshots[0] ?? null,
     rsuGrants: data.rsuGrants,
+    rsuPriceEstimate,
   });
 
   const tax = computeTax({
+    taxYear,
     filingStatus: data.filingStatus,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
   });
 
-  const taxImplied = nw.netWorth - nw.afterTaxNetWorth;
+  const taxImplied = nw.estimatedTaxLiability;
+  const physicianPlan = physicianMode && data.sCorpProfile
+    ? buildPhysicianMoneyPlan({
+        taxYear,
+        annualRevenue: data.sCorpProfile.annualRevenue,
+        operatingExpenses: data.sCorpProfile.operatingExpenses,
+        ownerW2Salary: data.sCorpProfile.w2SalaryFromCorp,
+        plannedRetirementContribution: data.sCorpProfile.solo401kContribution,
+        plannedCashDistribution: data.sCorpProfile.projectedDistribution,
+      })
+    : null;
+  const physicianFederalReserve = Math.max(0, tax.totalTax - (data.w2Snapshots[0]?.ytdFederalWithheld ?? 0));
 
   return (
     <div>
       <PageHeader
         title={`Welcome${data.name ? ", " + data.name : ""}`}
-        description="Your unified financial picture"
+        description={physicianMode ? "Personal wealth and practice cash flow, without the spreadsheet residency" : "Your unified financial picture"}
         actions={
           !onboarded ? (
             <Link
@@ -82,8 +104,10 @@ export default async function DashboardPage() {
         {!hasAnyData ? (
           <div className="space-y-6">
             <EmptyState
-              title="Let's get you set up"
-              description="Start with onboarding — the assistant will ask about your situation and recommend a profile. Or jump straight to adding accounts."
+              title="Let’s get you set up"
+              description={physicianMode
+                ? "Connect personal and practice accounts, then add payroll and expected clinical income. Basis will turn the mess into a money plan."
+                : "Start with onboarding. The assistant will ask about your situation and recommend a profile. Or jump straight to adding accounts."}
               ctaLabel="Start onboarding"
               ctaHref="/onboarding"
             />
@@ -98,22 +122,22 @@ export default async function DashboardPage() {
                   </CardContent>
                 </Card>
               </Link>
-              <Link href="/equity" className="block">
+              <Link href={physicianMode ? "/tax#income-snapshot" : "/equity"} className="block">
                 <Card className="hover:border-emerald-500/50 transition-colors">
                   <CardContent className="p-5">
-                    <div className="text-sm font-medium">Add RSU grants</div>
+                    <div className="text-sm font-medium">{physicianMode ? "Import a Gusto pay stub" : "Add RSU grants"}</div>
                     <div className="mt-1 text-xs text-zinc-500">
-                      Track vesting & cost basis
+                      {physicianMode ? "Use current payroll and withholding" : "Track vesting and cost basis"}
                     </div>
                   </CardContent>
                 </Card>
               </Link>
-              <Link href="/tax" className="block">
+              <Link href={physicianMode ? "/tax#s-corp-profile" : "/tax"} className="block">
                 <Card className="hover:border-emerald-500/50 transition-colors">
                   <CardContent className="p-5">
-                    <div className="text-sm font-medium">Set up income profile</div>
+                    <div className="text-sm font-medium">{physicianMode ? "Add practice income" : "Set up income profile"}</div>
                     <div className="mt-1 text-xs text-zinc-500">
-                      Project this year's tax bill
+                      {physicianMode ? "Revenue, expenses, payroll, retirement" : "Project this year’s tax bill"}
                     </div>
                   </CardContent>
                 </Card>
@@ -122,15 +146,16 @@ export default async function DashboardPage() {
           </div>
         ) : (
           <div className="space-y-6">
+            <NetWorthHistory points={snapshots} basisCoverage={nw.basisCoverage} />
+
             <div className="grid gap-4 md:grid-cols-3">
               <Stat
-                label="Net Worth"
+                label="Gross net worth"
                 value={formatCurrency(nw.netWorth, { compact: true })}
                 hint={`${formatCurrency(nw.totalAssets, { compact: true })} assets · ${formatCurrency(nw.totalLiabilities, { compact: true })} liab.`}
               />
               <Stat
-                label="After-Tax Net Worth"
-                tone={taxImplied > 0 ? "warning" : "default"}
+                label="Estimated after-tax net worth"
                 value={formatCurrency(nw.afterTaxNetWorth, { compact: true })}
                 hint={
                   taxImplied > 0
@@ -144,6 +169,36 @@ export default async function DashboardPage() {
                 hint={`${formatPercent(tax.effectiveRate)} effective · ${formatPercent(tax.marginalOrdinaryRate)} marginal`}
               />
             </div>
+
+            {physicianMode ? (
+              <Card className="overflow-hidden">
+                <CardContent className="p-0">
+                  <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">Practice money plan</p>
+                      {physicianPlan ? (
+                        <>
+                          <p className="mt-2 text-xl font-semibold tracking-tight">
+                            {formatCurrency(physicianPlan.estimatedCashBeforeOwnerDistribution - physicianFederalReserve, { compact: true })} estimated after known commitments
+                          </p>
+                          <p className="mt-2 max-w-[70ch] text-sm leading-6 text-zinc-500">
+                            Includes operating costs, owner payroll, employer payroll taxes, retirement, and estimated federal income tax before payments already made.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="mt-2 text-lg font-semibold">Add practice income to unlock your allocation</p>
+                          <p className="mt-2 text-sm text-zinc-500">Basis needs revenue, expenses, and owner payroll before it starts bossing your cash around.</p>
+                        </>
+                      )}
+                    </div>
+                    <Link href={physicianPlan ? "/plan" : "/tax#s-corp-profile"} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+                      {physicianPlan ? "Review money plan" : "Add practice income"} <ArrowRight className="size-4" />
+                    </Link>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : null}
 
             <div className="grid gap-4 md:grid-cols-2">
               <Card>
@@ -174,7 +229,10 @@ export default async function DashboardPage() {
                     <Row label="YTD RSU vest income" value={formatCurrency(projection.ytdRsuVestIncome)} />
                     <Row label="Upcoming RSU income" value={formatCurrency(projection.upcomingRsuIncome)} />
                     {projection.projectedSCorpDistribution > 0 && (
-                      <Row label="S-Corp distribution" value={formatCurrency(projection.projectedSCorpDistribution)} />
+                      <Row label="Planned cash distribution" value={formatCurrency(projection.projectedSCorpDistribution)} />
+                    )}
+                    {projection.projectedSCorpPassThrough > 0 && (
+                      <Row label="S-Corp pass-through income" value={formatCurrency(projection.projectedSCorpPassThrough)} />
                     )}
                     <div className="border-t border-zinc-200 dark:border-zinc-800 pt-2 mt-2 flex justify-between font-medium">
                       <span>Total projected ordinary</span>
@@ -225,7 +283,7 @@ export default async function DashboardPage() {
                   <div className="text-sm">
                     <div className="font-medium">NIIT threshold crossed</div>
                     <div className="mt-1 text-zinc-600 dark:text-zinc-400">
-                      You're {formatCurrency(tax.bracketRoom.niitOver)} over the {formatCurrency(tax.thresholds.niit)} NIIT threshold. Investment income above this point pays an additional 3.8% on top of LTCG/dividends.
+                      You’re {formatCurrency(tax.bracketRoom.niitOver)} over the {formatCurrency(tax.thresholds.niit)} NIIT threshold. Investment income above this point pays an additional 3.8% on top of LTCG/dividends.
                     </div>
                   </div>
                 </CardContent>

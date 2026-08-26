@@ -13,6 +13,7 @@ import type {
   PaycheckProfile,
   SCorpProfile,
 } from "@prisma/client";
+import { buildPhysicianMoneyPlan } from "@/lib/physician-planning";
 import {
   estimateOrdinaryWithdrawalRate,
   estimateUnrealizedGainTaxRate,
@@ -199,6 +200,7 @@ export type IncomeProjectionInputs = {
   additionalOrdinaryIncome?: number;
   realizedSTCG?: number;
   realizedLTCG?: number;
+  asOfDate?: Date;
 };
 
 export type IncomeProjection = {
@@ -207,9 +209,13 @@ export type IncomeProjection = {
   projectedW2: number;
   projectedBonus: number;
   ytdRsuVestIncome: number;
+  rsuIncomeAfterSnapshot: number;
   upcomingRsuIncome: number;
+  unpricedRsuEvents: number;
+  unpricedRsuShares: number;
   projectedSCorpDistribution: number;
   projectedSCorpW2: number;
+  projectedSCorpPassThrough: number;
   totalProjectedOrdinary: number;
   realizedSTCG: number;
   realizedLTCG: number;
@@ -227,6 +233,7 @@ export function projectIncome(inputs: IncomeProjectionInputs): IncomeProjection 
     additionalOrdinaryIncome = 0,
     realizedSTCG = 0,
     realizedLTCG = 0,
+    asOfDate = new Date(),
   } = inputs;
 
   const ytdW2 = latestW2?.ytdWages ?? 0;
@@ -237,8 +244,8 @@ export function projectIncome(inputs: IncomeProjectionInputs): IncomeProjection 
   let remainingW2 = 0;
   let projectedBonus = 0;
   if (paycheck) {
-    const snapshotDate = latestW2?.snapshotDate
-      ? new Date(latestW2.snapshotDate)
+    const snapshotDate = (latestW2?.payPeriodEnd ?? latestW2?.snapshotDate)
+      ? new Date(latestW2?.payPeriodEnd ?? latestW2!.snapshotDate)
       : new Date(taxYear, 0, 1);
     const yearEnd = new Date(taxYear, 11, 31);
     const daysRemaining = Math.max(
@@ -256,42 +263,65 @@ export function projectIncome(inputs: IncomeProjectionInputs): IncomeProjection 
     }
   }
 
-  // Project upcoming RSU vests this year.
-  let upcomingRsuIncome = 0;
-  const now = new Date();
-  for (const grant of rsuGrants) {
-    for (const v of grant.vestEvents) {
-      const vDate = new Date(v.vestDate);
-      if (
-        v.status === "PENDING" &&
-        vDate.getFullYear() === taxYear &&
-        vDate >= now
-      ) {
-        const price = rsuPriceEstimate[grant.ticker] ?? v.fmvAtVest ?? 0;
-        upcomingRsuIncome += v.shares * price;
-      }
-    }
-  }
+  // The pay stub is authoritative through its pay-period end (or pay date when
+  // the period end is unavailable). RSU income on/before that boundary is
+  // already inside ytdW2 and must never be added again. Vest events after the
+  // boundary fill the gap between the latest stub and the end of the year.
+  const snapshotCoverageDate = latestW2
+    ? new Date(latestW2.payPeriodEnd ?? latestW2.snapshotDate)
+    : new Date(taxYear, 0, 1);
+  const rsu = reconcileRsuIncome({
+    taxYear,
+    asOfDate,
+    snapshotCoverageDate,
+    grants: rsuGrants,
+    priceEstimates: rsuPriceEstimate,
+  });
 
-  const projectedSCorpW2 = sCorp?.w2SalaryFromCorp ?? 0;
+  // When payroll or an income snapshot exists, owner W-2 wages are already in
+  // projectedW2. Only fall back to the S-corp profile when no payroll source is
+  // available, otherwise the same salary gets counted twice.
+  const projectedSCorpW2 = sCorp && !paycheck && !latestW2 ? sCorp.w2SalaryFromCorp : 0;
   const projectedSCorpDistribution = sCorp?.projectedDistribution ?? 0;
+  const sCorpPlan = sCorp
+    ? buildPhysicianMoneyPlan({
+        taxYear,
+        annualRevenue: sCorp.annualRevenue,
+        operatingExpenses: sCorp.operatingExpenses,
+        ownerW2Salary: sCorp.w2SalaryFromCorp,
+        plannedRetirementContribution: sCorp.solo401kContribution,
+        plannedCashDistribution: sCorp.projectedDistribution,
+      })
+    : null;
+  const projectedSCorpPassThrough = sCorpPlan?.estimatedPassThroughIncome ?? 0;
 
   const projectedW2 = ytdW2 + remainingW2;
 
+  // ytdW2 is total gross/taxable earnings to date. Bonuses and RSU income are
+  // informational components of that total, so adding them again would double-count
+  // compensation already reported by a pay stub or W-2.
   const totalProjectedOrdinary =
     projectedW2 +
     projectedBonus +
-    ytdRsuVestIncome +
-    upcomingRsuIncome +
+    rsu.rsuIncomeAfterSnapshot +
+    rsu.upcomingRsuIncome +
     projectedSCorpW2 +
-    projectedSCorpDistribution +
+    projectedSCorpPassThrough +
     additionalOrdinaryIncome +
     realizedSTCG;
 
-  const estimatedPretax =
+  const profilePretax =
     (paycheck?.k401Contribution ?? 0) +
     (paycheck?.hsaContribution ?? 0) +
-    (paycheck?.otherPretax ?? 0) +
+    (paycheck?.otherPretax ?? 0);
+  const snapshotPretax = latestW2?.ytdPretaxDeductions ?? 0;
+  const snapshotDate = latestW2?.snapshotDate ? new Date(latestW2.snapshotDate) : null;
+  const elapsedYear = snapshotDate && snapshotDate.getFullYear() === taxYear
+    ? Math.max(1 / 365, Math.min(1, (snapshotDate.getTime() - new Date(taxYear, 0, 1).getTime()) / (365 * 24 * 60 * 60 * 1000)))
+    : 1;
+  const annualizedSnapshotPretax = Math.min(100_000, snapshotPretax / elapsedYear);
+  const estimatedPretax =
+    Math.max(profilePretax, annualizedSnapshotPretax) +
     (sCorp?.solo401kContribution ?? 0) +
     (sCorp?.sepIraContribution ?? 0);
 
@@ -301,12 +331,73 @@ export function projectIncome(inputs: IncomeProjectionInputs): IncomeProjection 
     projectedW2,
     projectedBonus,
     ytdRsuVestIncome,
-    upcomingRsuIncome,
+    rsuIncomeAfterSnapshot: rsu.rsuIncomeAfterSnapshot,
+    upcomingRsuIncome: rsu.upcomingRsuIncome,
+    unpricedRsuEvents: rsu.unpricedRsuEvents,
+    unpricedRsuShares: rsu.unpricedRsuShares,
     projectedSCorpDistribution,
     projectedSCorpW2,
+    projectedSCorpPassThrough,
     totalProjectedOrdinary,
     realizedSTCG,
     realizedLTCG,
     estimatedPretax,
+  };
+}
+
+type RsuGrantForReconciliation = {
+  ticker: string;
+  vestEvents: Array<{
+    vestDate: Date;
+    shares: number;
+    fmvAtVest: number | null;
+    status: string;
+  }>;
+};
+
+export function reconcileRsuIncome(input: {
+  taxYear: number;
+  asOfDate: Date;
+  snapshotCoverageDate: Date;
+  grants: RsuGrantForReconciliation[];
+  priceEstimates?: Record<string, number>;
+}) {
+  let rsuIncomeAfterSnapshot = 0;
+  let upcomingRsuIncome = 0;
+  let unpricedRsuEvents = 0;
+  let unpricedRsuShares = 0;
+
+  for (const grant of input.grants) {
+    for (const vest of grant.vestEvents) {
+      const vestDate = new Date(vest.vestDate);
+      if (
+        vest.status === "CANCELED" ||
+        vestDate.getFullYear() !== input.taxYear ||
+        vestDate <= input.snapshotCoverageDate
+      ) continue;
+
+      const price = vest.fmvAtVest ?? input.priceEstimates?.[grant.ticker] ?? null;
+      if (price === null || price <= 0) {
+        unpricedRsuEvents += 1;
+        unpricedRsuShares += vest.shares;
+        continue;
+      }
+
+      const income = vest.shares * price;
+      if (vest.status === "VESTED" && vestDate <= input.asOfDate) {
+        rsuIncomeAfterSnapshot += income;
+      } else {
+        // Includes future pending vests and past-due events not yet confirmed.
+        // Both are estimates until payroll or an FMV-at-vest reconciles them.
+        upcomingRsuIncome += income;
+      }
+    }
+  }
+
+  return {
+    rsuIncomeAfterSnapshot,
+    upcomingRsuIncome,
+    unpricedRsuEvents,
+    unpricedRsuShares,
   };
 }

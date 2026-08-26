@@ -4,7 +4,15 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/user";
-import { AccountType, AcquisitionType } from "@prisma/client";
+import { requireOwnedAccount } from "@/lib/ownership";
+import {
+  AccountType,
+  AcquisitionType,
+  LiabilityType,
+  ManualAssetType,
+  RepaymentPlan,
+  StudentLoanType,
+} from "@prisma/client";
 
 export async function createAccount(formData: FormData) {
   const userId = await getCurrentUserId();
@@ -23,13 +31,16 @@ export async function createAccount(formData: FormData) {
 }
 
 export async function deleteAccount(accountId: string) {
-  await prisma.account.delete({ where: { id: accountId } });
+  const userId = await getCurrentUserId();
+  await prisma.account.deleteMany({ where: { id: accountId, userId } });
   revalidatePath("/");
   revalidatePath("/accounts");
   redirect("/accounts");
 }
 
 export async function addLot(accountId: string, formData: FormData) {
+  const userId = await getCurrentUserId();
+  await requireOwnedAccount(accountId, userId);
   await prisma.assetLot.create({
     data: {
       accountId,
@@ -48,12 +59,15 @@ export async function addLot(accountId: string, formData: FormData) {
 }
 
 export async function deleteLot(accountId: string, lotId: string) {
-  await prisma.assetLot.delete({ where: { id: lotId } });
+  const userId = await getCurrentUserId();
+  await prisma.assetLot.deleteMany({ where: { id: lotId, accountId, account: { userId } } });
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/");
 }
 
 export async function addHoldingPosition(accountId: string, formData: FormData) {
+  const userId = await getCurrentUserId();
+  await requireOwnedAccount(accountId, userId);
   await prisma.holdingPosition.create({
     data: {
       accountId,
@@ -68,14 +82,16 @@ export async function addHoldingPosition(accountId: string, formData: FormData) 
 }
 
 export async function deleteHoldingPosition(accountId: string, posId: string) {
-  await prisma.holdingPosition.delete({ where: { id: posId } });
+  const userId = await getCurrentUserId();
+  await prisma.holdingPosition.deleteMany({ where: { id: posId, accountId, account: { userId } } });
   revalidatePath(`/accounts/${accountId}`);
   revalidatePath("/");
 }
 
 export async function updateAccountCash(accountId: string, formData: FormData) {
-  await prisma.account.update({
-    where: { id: accountId },
+  const userId = await getCurrentUserId();
+  await prisma.account.updateMany({
+    where: { id: accountId, userId },
     data: { cashBalance: parseFloat((formData.get("cashBalance") as string) || "0") },
   });
   revalidatePath(`/accounts/${accountId}`);
@@ -88,7 +104,7 @@ export async function createManualAsset(formData: FormData) {
     data: {
       userId,
       name: String(formData.get("name") ?? "Asset"),
-      type: (formData.get("type") as any) || "OTHER",
+      type: (formData.get("type") as ManualAssetType) || "OTHER",
       currentValue: parseFloat((formData.get("currentValue") as string) || "0"),
       purchasePrice: parseFloat((formData.get("purchasePrice") as string) || "0") || null,
       purchaseDate: formData.get("purchaseDate")
@@ -109,11 +125,11 @@ export async function createLiability(formData: FormData) {
       data: {
         userId,
         servicer: (formData.get("servicer") as string) || null,
-        loanType: (formData.get("loanType") as any) || "FEDERAL_DIRECT",
+        loanType: (formData.get("loanType") as StudentLoanType) || "FEDERAL_DIRECT",
         balance: parseFloat((formData.get("balance") as string) || "0"),
         interestRate: parseFloat((formData.get("interestRate") as string) || "0"),
         monthlyPayment: parseFloat((formData.get("monthlyPayment") as string) || "0") || null,
-        repaymentPlan: (formData.get("repaymentPlan") as any) || null,
+        repaymentPlan: (formData.get("repaymentPlan") as RepaymentPlan) || null,
         pslfEligible: formData.get("pslfEligible") === "on",
       },
     });
@@ -122,7 +138,7 @@ export async function createLiability(formData: FormData) {
       data: {
         userId,
         name: String(formData.get("name") ?? "Liability"),
-        type: (formData.get("type") as any) || "OTHER",
+        type: (formData.get("type") as LiabilityType) || "OTHER",
         currentBalance: parseFloat((formData.get("currentBalance") as string) || "0"),
         interestRate: parseFloat((formData.get("interestRate") as string) || "0") || null,
         monthlyPayment: parseFloat((formData.get("monthlyPayment") as string) || "0") || null,

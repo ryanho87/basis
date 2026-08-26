@@ -88,7 +88,6 @@ export default async function EquityPage() {
 
             {grants.map((g) => {
               const vested = g.vestEvents.filter((v) => v.status === "VESTED");
-              const pending = g.vestEvents.filter((v) => v.status === "PENDING");
               const vestedShares = vested.reduce((s, v) => s + v.shares, 0);
               const pct = g.totalShares > 0 ? vestedShares / g.totalShares : 0;
               return (

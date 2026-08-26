@@ -61,7 +61,7 @@ export default function NewAccountPage() {
                   className="mt-1"
                 />
                 <p className="mt-1 text-xs text-zinc-500">
-                  For checking/savings, this is the balance. For brokerage, it's settled cash.
+                  For checking/savings, this is the balance. For brokerage, it&apos;s settled cash.
                 </p>
               </div>
               <div className="pt-2 flex gap-2">

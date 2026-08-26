@@ -59,7 +59,7 @@ export default function NewRsuGrantPage() {
                 </div>
               </div>
               <p className="text-xs text-zinc-500">
-                Standard tech grant: 12 month cliff + quarterly vesting over 48 months. We'll generate the schedule and you can mark each vest as it happens with the FMV.
+                Standard tech grant: 12 month cliff + quarterly vesting over 48 months. We&apos;ll generate the schedule and you can mark each vest as it happens with the FMV.
               </p>
               <div className="pt-2 flex gap-2">
                 <Button type="submit">Add grant</Button>

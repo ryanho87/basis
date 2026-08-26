@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
-import { anthropic, CLAUDE_MODEL } from "@/lib/anthropic";
+import {
+  AI_GATEWAY_MODEL,
+  getAIGateway,
+  getAIGatewayConfigurationError,
+} from "@/lib/ai-gateway";
 import { ONBOARDING_SYSTEM_PROMPT, parseOnboardingResult } from "@/lib/onboarding";
 import { getCurrentUser } from "@/lib/user";
 import { prisma } from "@/lib/prisma";
-import { FilingStatus, ProfileType } from "@prisma/client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,10 +15,11 @@ type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as { messages: ChatMessage[] };
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const gatewayError = getAIGatewayConfigurationError();
+  if (gatewayError) {
     return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY is not set." }),
-      { status: 500, headers: { "content-type": "application/json" } },
+      JSON.stringify({ error: gatewayError }),
+      { status: 503, headers: { "content-type": "application/json" } },
     );
   }
 
@@ -24,8 +28,8 @@ export async function POST(req: NextRequest) {
     ? [{ role: "user" as const, content: "Hi, please introduce yourself and start the interview." }]
     : body.messages;
 
-  const stream = await anthropic.messages.stream({
-    model: CLAUDE_MODEL,
+  const stream = await getAIGateway().messages.stream({
+    model: AI_GATEWAY_MODEL,
     max_tokens: 2048,
     system: ONBOARDING_SYSTEM_PROMPT,
     messages,
@@ -48,14 +52,14 @@ export async function POST(req: NextRequest) {
         // Try to parse a completion marker. If found, persist profile + suggestions.
         const parsed = parseOnboardingResult(assistantText);
         if (parsed) {
-          const fs = (parsed.result.filingStatus as FilingStatus) || "SINGLE";
-          const pt = (parsed.result.profileType as ProfileType) || "UNCLASSIFIED";
           await prisma.user.update({
             where: { id: user.id },
             data: {
-              filingStatus: fs,
+              filingStatus: parsed.result.filingStatus,
               state: parsed.result.state,
-              profileType: pt,
+              profileType: parsed.result.profileType,
+              primaryPersona: parsed.result.primaryPersona,
+              financialCapabilitiesJson: JSON.stringify(parsed.result.financialCapabilities),
               primaryConcern: parsed.result.primaryConcern,
               onboardingSummary: parsed.result.summary,
               onboardedAt: new Date(),
@@ -86,9 +90,10 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
         }
         controller.close();
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "AI Gateway stream failed";
         controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`),
+          encoder.encode(`data: ${JSON.stringify({ type: "error", error: message })}\n\n`),
         );
         controller.close();
       }

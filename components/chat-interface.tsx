@@ -79,10 +79,11 @@ export function ChatInterface({
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "The assistant stopped responding";
       setMessages((prev) => {
         const copy = [...prev];
-        copy[copy.length - 1] = { role: "assistant", content: `⚠ ${err.message}` };
+        copy[copy.length - 1] = { role: "assistant", content: `⚠ ${message}` };
         return copy;
       });
     } finally {
@@ -97,8 +98,9 @@ export function ChatInterface({
           <div className="text-sm text-zinc-500 max-w-md">
             <p className="font-medium text-zinc-700 dark:text-zinc-300 mb-2">Try asking:</p>
             <ul className="space-y-1.5 list-disc pl-5">
-              <li>What's my LTCG bracket room this year?</li>
-              <li>I'm overweight in NVDA — what are my liquidation options?</li>
+              <li>Roast my portfolio, then tell me what to fix first</li>
+              <li>What&apos;s my LTCG bracket room this year?</li>
+              <li>I&apos;m overweight in NVDA — what are my liquidation options?</li>
               <li>Should I prioritize paying off my student loans or invest more?</li>
               <li>Explain the STR + cost segregation strategy with my numbers</li>
             </ul>

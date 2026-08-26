@@ -2,13 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUserId } from "@/lib/user";
 
 export async function setStrategyStatus(
   id: string,
   status: "NEW" | "ACKNOWLEDGED" | "DISMISSED" | "ACTIONED",
 ) {
-  await prisma.strategySuggestion.update({
-    where: { id },
+  const userId = await getCurrentUserId();
+  await prisma.strategySuggestion.updateMany({
+    where: { id, userId },
     data: { status },
   });
   revalidatePath("/strategies");
@@ -16,7 +18,8 @@ export async function setStrategyStatus(
 }
 
 export async function deleteStrategy(id: string) {
-  await prisma.strategySuggestion.delete({ where: { id } });
+  const userId = await getCurrentUserId();
+  await prisma.strategySuggestion.deleteMany({ where: { id, userId } });
   revalidatePath("/strategies");
   revalidatePath("/");
 }

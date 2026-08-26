@@ -1,0 +1,2 @@
+ALTER TABLE "AuthInvite"
+ADD COLUMN "canceledAt" TIMESTAMP(3);
