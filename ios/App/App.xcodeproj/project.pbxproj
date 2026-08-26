@@ -301,8 +301,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				GOOGLE_IOS_CLIENT_ID = "";
-				GOOGLE_REVERSED_CLIENT_ID = "";
+				DEVELOPMENT_TEAM = 25QDD962C5;
+				GOOGLE_IOS_CLIENT_ID = "432895778670-vgapcputosigsc655s5b5knoglmoevij.apps.googleusercontent.com";
+				GOOGLE_REVERSED_CLIENT_ID = "com.googleusercontent.apps.432895778670-vgapcputosigsc655s5b5knoglmoevij";
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -325,8 +326,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				GOOGLE_IOS_CLIENT_ID = "";
-				GOOGLE_REVERSED_CLIENT_ID = "";
+				DEVELOPMENT_TEAM = 25QDD962C5;
+				GOOGLE_IOS_CLIENT_ID = "432895778670-vgapcputosigsc655s5b5knoglmoevij.apps.googleusercontent.com";
+				GOOGLE_REVERSED_CLIENT_ID = "com.googleusercontent.apps.432895778670-vgapcputosigsc655s5b5knoglmoevij";
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (

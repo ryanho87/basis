@@ -81,7 +81,7 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-zinc-200 bg-white/95 px-4 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:hidden">
+      <header className="sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center justify-between border-b border-zinc-200 bg-white/95 px-4 pt-[env(safe-area-inset-top)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 md:hidden">
         <Link href="/" className="flex items-center gap-2" aria-label="Basis dashboard">
           <span className="flex size-8 items-center justify-center rounded-md bg-emerald-600 font-bold text-white">B</span>
           <span className="text-sm font-semibold tracking-tight">Basis</span>

@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export function AuthShell({ eyebrow, title, description, children }: { eyebrow: string; title: string; description: string; children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-zinc-50 px-5 py-10 dark:bg-zinc-950 sm:py-16">
+    <div className="min-h-screen bg-zinc-50 px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-[max(2.5rem,env(safe-area-inset-top))] dark:bg-zinc-950 sm:py-16">
       <div className="mx-auto w-full max-w-md">
         <div className="mb-10 flex items-center justify-between">
           <div className="flex items-center gap-3">
