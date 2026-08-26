@@ -5,10 +5,9 @@ const config: CapacitorConfig = {
   appName: "Basis",
   webDir: "mobile-shell",
   loggingBehavior: "none",
-  backgroundColor: "#09090b",
   ios: {
     preferredContentMode: "mobile",
-    contentInset: "automatic",
+    contentInset: "never",
     allowsLinkPreview: false,
   },
   server: {
