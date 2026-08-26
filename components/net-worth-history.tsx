@@ -18,9 +18,17 @@ type NetWorthPoint = {
 };
 
 function shortDate(dateKey: string) {
+  const day = dateKey.split(":", 1)[0];
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(
-    new Date(`${dateKey}T12:00:00`),
+    new Date(`${day}T12:00:00`),
   );
+}
+
+function snapshotLabel(dateKey: string) {
+  const date = shortDate(dateKey);
+  if (dateKey.endsWith(":morning")) return `${date} · 6 AM Pacific`;
+  if (dateKey.endsWith(":market-close")) return `${date} · Market close`;
+  return date;
 }
 
 export function NetWorthHistory({
@@ -36,7 +44,7 @@ export function NetWorthHistory({
         <div>
           <h2 className="text-sm font-semibold tracking-tight">Net worth over time</h2>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            One daily snapshot, updated after every institution sync.
+            Scheduled at 6 AM Pacific and the U.S. market close, plus manual refreshes.
           </p>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-zinc-600 dark:text-zinc-400">
@@ -83,7 +91,7 @@ export function NetWorthHistory({
               className="text-zinc-400"
             />
             <Tooltip
-              labelFormatter={(label) => shortDate(String(label))}
+              labelFormatter={(label) => snapshotLabel(String(label))}
               formatter={(value, name) => [
                 formatCurrency(Number(value)),
                 name === "netWorth" ? "Gross net worth" : "Estimated after-tax",
@@ -120,7 +128,7 @@ export function NetWorthHistory({
         <span>
           {points.length === 1
             ? "History starts today. Time travel remains outside the Plaid trial plan."
-            : `${points.length} daily snapshots recorded.`}
+            : `${points.length} snapshots recorded.`}
         </span>
         <span>
           {basisCoverage === null

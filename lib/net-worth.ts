@@ -18,9 +18,9 @@ function isTraditionalSubtype(subtype: string) {
     .some((label) => subtype.includes(label));
 }
 
-function dateKey(date: Date) {
+export function netWorthDateKey(date: Date, timeZone = process.env.APP_TIME_ZONE?.trim() || "America/Los_Angeles") {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: process.env.APP_TIME_ZONE?.trim() || "America/Los_Angeles",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -218,11 +218,13 @@ export async function calculateUnifiedNetWorth(userId: string): Promise<UnifiedN
 export async function captureNetWorthSnapshot(
   userId: string,
   source: NetWorthSnapshotSource,
+  options: { snapshotKey?: string; capturedAt?: Date } = {},
 ) {
   const value = await calculateUnifiedNetWorth(userId);
-  const capturedAt = new Date();
+  const capturedAt = options.capturedAt ?? new Date();
+  const snapshotKey = options.snapshotKey ?? netWorthDateKey(capturedAt);
   const snapshot = await prisma.netWorthSnapshot.upsert({
-    where: { userId_dateKey: { userId, dateKey: dateKey(capturedAt) } },
+    where: { userId_dateKey: { userId, dateKey: snapshotKey } },
     update: {
       capturedAt,
       source,
@@ -240,7 +242,7 @@ export async function captureNetWorthSnapshot(
     },
     create: {
       userId,
-      dateKey: dateKey(capturedAt),
+      dateKey: snapshotKey,
       capturedAt,
       source,
       grossAssets: value.totalAssets,

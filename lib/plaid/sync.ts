@@ -35,6 +35,11 @@ export type PlaidSyncSummary = {
   warnings: string[];
 };
 
+export type PlaidSyncAllSummary = PlaidSyncSummary & {
+  connectionsCount: number;
+  failedConnections: Array<{ connectionId: string; institutionName: string; error: string }>;
+};
+
 export class PlaidSyncError extends Error {
   constructor(
     message: string,
@@ -353,7 +358,11 @@ async function syncTransactions(
   return { cursor, count: 0 };
 }
 
-export async function syncPlaidItem(connectionId: string, userId: string): Promise<PlaidSyncSummary> {
+export async function syncPlaidItem(
+  connectionId: string,
+  userId: string,
+  options: { captureSnapshot?: boolean } = {},
+): Promise<PlaidSyncSummary> {
   const connection = await prisma.plaidItem.findFirst({
     where: { id: connectionId, userId, status: { not: "DISCONNECTED" } },
     include: { developerCredential: true },
@@ -508,10 +517,12 @@ export async function syncPlaidItem(connectionId: string, userId: string): Promi
       }
     }
 
-    try {
-      await captureNetWorthSnapshot(userId, "PLAID_SYNC");
-    } catch {
-      warnings.push("Net worth history could not be updated after this sync");
+    if (options.captureSnapshot !== false) {
+      try {
+        await captureNetWorthSnapshot(userId, "PLAID_SYNC");
+      } catch {
+        warnings.push("Net worth history could not be updated after this sync");
+      }
     }
 
     const summary: PlaidSyncSummary = {
@@ -573,4 +584,52 @@ export async function syncPlaidItem(connectionId: string, userId: string): Promi
     ]);
     throw new PlaidSyncError(safe.message, safe.code);
   }
+}
+
+export async function syncAllPlaidItems(
+  userId: string,
+  options: { captureSnapshot?: boolean } = {},
+): Promise<PlaidSyncAllSummary> {
+  const connections = await prisma.plaidItem.findMany({
+    where: { userId, status: { not: "DISCONNECTED" } },
+    select: { id: true, institutionName: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const aggregate: PlaidSyncAllSummary = {
+    connectionsCount: connections.length,
+    accountsCount: 0,
+    holdingsCount: 0,
+    taxLotsCount: 0,
+    liabilitiesCount: 0,
+    transactionsCount: 0,
+    warnings: [],
+    failedConnections: [],
+  };
+
+  for (const connection of connections) {
+    try {
+      const summary = await syncPlaidItem(connection.id, userId, { captureSnapshot: false });
+      aggregate.accountsCount += summary.accountsCount;
+      aggregate.holdingsCount += summary.holdingsCount;
+      aggregate.taxLotsCount += summary.taxLotsCount;
+      aggregate.liabilitiesCount += summary.liabilitiesCount;
+      aggregate.transactionsCount += summary.transactionsCount;
+      aggregate.warnings.push(...summary.warnings);
+    } catch (error) {
+      aggregate.failedConnections.push({
+        connectionId: connection.id,
+        institutionName: connection.institutionName ?? "Connected institution",
+        error: error instanceof Error ? error.message : "Sync failed",
+      });
+    }
+  }
+
+  if (options.captureSnapshot !== false && connections.length > 0) {
+    try {
+      await captureNetWorthSnapshot(userId, "PLAID_SYNC");
+    } catch {
+      aggregate.warnings.push("Net worth history could not be updated after this refresh");
+    }
+  }
+  return aggregate;
 }

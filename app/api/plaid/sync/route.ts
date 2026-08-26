@@ -1,16 +1,15 @@
 import { getCurrentUserId } from "@/lib/user";
-import { PlaidSyncError, syncPlaidItem } from "@/lib/plaid/sync";
+import { PlaidSyncError, syncAllPlaidItems, syncPlaidItem } from "@/lib/plaid/sync";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as { connectionId?: string };
-    if (!body.connectionId) {
-      return Response.json({ error: "A connection ID is required" }, { status: 400 });
-    }
     const userId = await getCurrentUserId();
-    const summary = await syncPlaidItem(body.connectionId, userId);
+    const summary = body.connectionId
+      ? await syncPlaidItem(body.connectionId, userId)
+      : await syncAllPlaidItems(userId);
     return Response.json({ summary });
   } catch (error) {
     if (error instanceof PlaidSyncError) {

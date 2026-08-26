@@ -37,7 +37,10 @@ function number(value: string | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export async function syncCoinbase(userId: string): Promise<CoinbaseSyncSummary> {
+export async function syncCoinbase(
+  userId: string,
+  options: { captureSnapshot?: boolean } = {},
+): Promise<CoinbaseSyncSummary> {
   // Coinbase still uses a personal environment key. Until credentials are
   // stored per profile, never let a newly authenticated user bootstrap a
   // connection with somebody else's key.
@@ -151,7 +154,9 @@ export async function syncCoinbase(userId: string): Promise<CoinbaseSyncSummary>
     where: { id: connection.id },
     data: { status: "ACTIVE", lastSyncedAt: syncedAt, errorMessage: null },
   });
-  await captureNetWorthSnapshot(userId, "COINBASE_SYNC");
+  if (options.captureSnapshot !== false) {
+    await captureNetWorthSnapshot(userId, "COINBASE_SYNC");
+  }
 
   return { accountsCount: accounts.length, pricedAccountsCount, totalValueUsd, warnings };
 }

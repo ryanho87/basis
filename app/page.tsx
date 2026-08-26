@@ -43,7 +43,7 @@ export default async function DashboardPage() {
   const snapshotRows = await prisma.netWorthSnapshot.findMany({
     where: { userId: user.id },
     select: { dateKey: true, netWorth: true, afterTaxNetWorth: true },
-    orderBy: { dateKey: "desc" },
+    orderBy: { capturedAt: "desc" },
     take: 365,
   });
   const snapshots = snapshotRows.reverse();

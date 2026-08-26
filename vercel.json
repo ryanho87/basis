@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/cron/financial-refresh?window=morning&candidate=daylight", "schedule": "0 13 * * *" },
+    { "path": "/api/cron/financial-refresh?window=morning&candidate=standard", "schedule": "0 14 * * *" },
+    { "path": "/api/cron/financial-refresh?window=market-close&candidate=daylight", "schedule": "0 20 * * 1-5" },
+    { "path": "/api/cron/financial-refresh?window=market-close&candidate=standard", "schedule": "0 21 * * 1-5" }
+  ]
+}

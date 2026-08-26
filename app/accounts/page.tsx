@@ -10,6 +10,7 @@ import { PlaidConnections } from "@/components/plaid-connections";
 import { PlaidDeveloperSettings } from "@/components/plaid-developer-settings";
 import { getPlaidCredentialStatus } from "@/lib/plaid/developer-credentials";
 import { CoinbaseConnection } from "@/components/coinbase-connection";
+import { SyncAllButton } from "@/components/sync-all-button";
 import { isCoinbaseConfigured } from "@/lib/coinbase/config";
 import {
   NetWorthAccountBreakdown,
@@ -215,14 +216,17 @@ export default async function AccountsPage() {
     <div>
       <PageHeader
         title="Accounts"
-        description="Your money, finally forced into one room"
+        description="Your money, finally forced into one room. Automatic refresh runs at 6 AM Pacific and around the U.S. market close."
         actions={
-          <Link
-            href="/accounts/new"
-            className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
-          >
-            <Plus className="size-4" /> Add account
-          </Link>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <SyncAllButton disabled={plaidItems.length === 0 && !coinbase} />
+            <Link
+              href="/accounts/new"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+            >
+              <Plus className="size-4" /> Add account
+            </Link>
+          </div>
         }
       />
       <PageBody>
