@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
   Bitcoin,
@@ -87,11 +89,15 @@ export function NetWorthAccountBreakdown({
   netWorth,
   totalAssets,
   totalLiabilities,
+  selectedAccountId = null,
+  onSelectAccount,
 }: {
   rows: AccountBreakdownRow[];
   netWorth: number;
   totalAssets: number;
   totalLiabilities: number;
+  selectedAccountId?: string | null;
+  onSelectAccount?: (accountId: string | null) => void;
 }) {
   const assets = rows
     .filter((row) => row.kind === "asset" && Math.abs(row.value) >= 0.01)
@@ -120,8 +126,8 @@ export function NetWorthAccountBreakdown({
       </header>
 
       <div>
-        <AccountGroup title="Assets" rows={assets} total={totalAssets} />
-        <AccountGroup title="Liabilities" rows={liabilities} total={totalLiabilities} liabilities />
+        <AccountGroup title="Assets" rows={assets} total={totalAssets} selectedAccountId={selectedAccountId} onSelectAccount={onSelectAccount} />
+        <AccountGroup title="Liabilities" rows={liabilities} total={totalLiabilities} liabilities selectedAccountId={selectedAccountId} onSelectAccount={onSelectAccount} />
       </div>
     </section>
   );
@@ -143,11 +149,15 @@ function AccountGroup({
   rows,
   total,
   liabilities = false,
+  selectedAccountId,
+  onSelectAccount,
 }: {
   title: string;
   rows: AccountBreakdownRow[];
   total: number;
   liabilities?: boolean;
+  selectedAccountId: string | null;
+  onSelectAccount?: (accountId: string | null) => void;
 }) {
   return (
     <section aria-labelledby={`breakdown-${title.toLowerCase()}`} className="border-b border-zinc-200 last:border-b-0 dark:border-zinc-800">
@@ -164,7 +174,7 @@ function AccountGroup({
       ) : (
         <div className="divide-y divide-zinc-100 dark:divide-zinc-900">
           {rows.map((row) => (
-            <AccountRow key={row.id} row={row} total={total} liabilities={liabilities} />
+            <AccountRow key={row.id} row={row} total={total} liabilities={liabilities} selected={selectedAccountId === row.id} onSelectAccount={onSelectAccount} />
           ))}
         </div>
       )}
@@ -172,14 +182,14 @@ function AccountGroup({
   );
 }
 
-function AccountRow({ row, total, liabilities }: { row: AccountBreakdownRow; total: number; liabilities: boolean }) {
+function AccountRow({ row, total, liabilities, selected, onSelectAccount }: { row: AccountBreakdownRow; total: number; liabilities: boolean; selected: boolean; onSelectAccount?: (accountId: string | null) => void }) {
   const style = CATEGORY_STYLES[row.category];
   const Icon = style.icon;
   const share = total > 0 ? Math.max(0, row.value) / total : 0;
   const width = `${Math.min(100, Math.max(share > 0 ? 1.5 : 0, share * 100))}%`;
 
   const content = (
-    <div className="grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-5 py-3.5 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40 sm:grid-cols-[minmax(0,1fr)_9rem_9rem] lg:px-6">
+    <div className={`grid min-h-20 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-5 py-3.5 transition-colors hover:bg-zinc-50/70 dark:hover:bg-zinc-900/40 sm:grid-cols-[minmax(0,1fr)_9rem_9rem] lg:px-6 ${selected ? "bg-emerald-50/70 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-950/20 dark:ring-emerald-900" : ""}`}>
       <div className="flex min-w-0 items-center gap-3">
         <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${style.iconClass}`}>
           <Icon className="size-4" aria-hidden="true" />
@@ -212,6 +222,11 @@ function AccountRow({ row, total, liabilities }: { row: AccountBreakdownRow; tot
     </div>
   );
 
+  if (onSelectAccount) return (
+    <button type="button" aria-pressed={selected} onClick={() => onSelectAccount(selected ? null : row.id)} className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500">
+      {content}
+    </button>
+  );
   return row.href ? (
     <Link href={row.href} className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-500">
       {content}

@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/user";
 import { valuateAccount } from "@/lib/finance";
-import { calculateUnifiedNetWorth } from "@/lib/net-worth";
+import { captureNetWorthSnapshot } from "@/lib/net-worth";
 import { formatDate } from "@/lib/utils";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { PlaidConnections } from "@/components/plaid-connections";
@@ -13,10 +13,10 @@ import { CoinbaseConnection } from "@/components/coinbase-connection";
 import { SyncAllButton } from "@/components/sync-all-button";
 import { isCoinbaseConfigured } from "@/lib/coinbase/config";
 import {
-  NetWorthAccountBreakdown,
   type AccountBreakdownCategory,
   type AccountBreakdownRow,
 } from "@/components/net-worth-account-breakdown";
+import { AccountsNetWorthTracker } from "@/components/accounts-net-worth-tracker";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,7 @@ function basisStatus(covered: number, relevant: number): AccountBreakdownRow["ba
 
 export default async function AccountsPage() {
   const user = await getCurrentUser();
-  const [accounts, manualAssets, liabilities, studentLoans, plaidItems, coinbase, netWorth, plaidCredential] = await Promise.all([
+  const [accounts, manualAssets, liabilities, studentLoans, plaidItems, coinbase, netWorthCapture, plaidCredential] = await Promise.all([
     prisma.account.findMany({
       where: { userId: user.id },
       include: { lots: true, positions: true },
@@ -97,9 +97,10 @@ export default async function AccountsPage() {
       where: { userId: user.id },
       include: { accounts: { where: { isActive: true } } },
     }),
-    calculateUnifiedNetWorth(user.id),
+    captureNetWorthSnapshot(user.id, "DASHBOARD"),
     getPlaidCredentialStatus(user.id),
   ]);
+  const netWorth = netWorthCapture.value;
 
   const rows: AccountBreakdownRow[] = [];
 
@@ -212,6 +213,11 @@ export default async function AccountsPage() {
     });
   }
 
+  const [aggregateHistoryDescending, accountHistoryDescending] = await Promise.all([
+    prisma.netWorthSnapshot.findMany({ where: { userId: user.id }, select: { dateKey: true, capturedAt: true, netWorth: true }, orderBy: { capturedAt: "desc" }, take: 500 }),
+    prisma.accountNetWorthSnapshot.findMany({ where: { userId: user.id, accountKey: { in: rows.map((row) => row.id) } }, select: { snapshotKey: true, capturedAt: true, accountKey: true, value: true }, orderBy: { capturedAt: "desc" }, take: 5000 }),
+  ]);
+
   return (
     <div>
       <PageHeader
@@ -231,11 +237,13 @@ export default async function AccountsPage() {
       />
       <PageBody>
         <div className="space-y-8">
-          <NetWorthAccountBreakdown
+          <AccountsNetWorthTracker
             rows={rows}
             netWorth={netWorth.netWorth}
             totalAssets={netWorth.totalAssets}
             totalLiabilities={netWorth.totalLiabilities}
+            aggregatePoints={aggregateHistoryDescending.reverse().map((point) => ({ snapshotKey: point.dateKey, capturedAt: point.capturedAt.toISOString(), value: point.netWorth }))}
+            accountPoints={accountHistoryDescending.reverse().map((point) => ({ snapshotKey: point.snapshotKey, capturedAt: point.capturedAt.toISOString(), accountKey: point.accountKey, value: point.value }))}
           />
 
           <section aria-labelledby="connections-heading">

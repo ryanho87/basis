@@ -49,6 +49,8 @@ model User {
   authIdentity             AuthUser?
   transactionCategories    TransactionCategory[]
   transactionRules         TransactionCategorizationRule[]
+  transactionTransferPairs TransactionTransferPair[]
+  accountNetWorthSnapshots AccountNetWorthSnapshot[]
 }
 
 // ---------- Authentication ----------
@@ -120,10 +122,10 @@ model AuthVerification {
 // Better Auth's short-lived JWT bridge signs identity tokens that Stytch
 // accepts during MCP consent. Private keys remain encrypted at rest.
 model Jwks {
-  id         String   @id
+  id         String    @id
   publicKey  String
   privateKey String
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   expiresAt  DateTime?
   alg        String?
   crv        String?
@@ -213,10 +215,10 @@ model PlaidAccount {
 }
 
 model PlaidTransaction {
-  id                     String           @id @default(cuid())
+  id                     String                   @id @default(cuid())
   plaidAccountId         String
-  plaidAccount           PlaidAccount     @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
-  externalTransactionId  String           @unique
+  plaidAccount           PlaidAccount             @relation(fields: [plaidAccountId], references: [id], onDelete: Cascade)
+  externalTransactionId  String                   @unique
   pendingTransactionId   String?
   date                   DateTime
   authorizedDate         DateTime?
@@ -227,43 +229,62 @@ model PlaidTransaction {
   isoCurrencyCode        String?
   unofficialCurrencyCode String?
   paymentChannel         String?
-  pending                Boolean          @default(false)
+  pending                Boolean                  @default(false)
   plaidPrimaryCategory   String?
   plaidDetailedCategory  String?
   plaidConfidenceLevel   String?
   originalDescription    String?
   logoUrl                String?
   website                String?
-  expenseTreatment       ExpenseTreatment @default(UNREVIEWED)
+  expenseTreatment       ExpenseTreatment         @default(UNREVIEWED)
+  cashFlowTreatment      CashFlowTreatment        @default(AUTO)
   expenseCategory        ExpenseCategory?
   deductiblePercent      Float?
   userNote               String?
   transactionCategoryId  String?
-  transactionCategory    TransactionCategory? @relation(fields: [transactionCategoryId], references: [id], onDelete: SetNull)
-  categorizationSource   String               @default("PLAID")
+  transactionCategory    TransactionCategory?     @relation(fields: [transactionCategoryId], references: [id], onDelete: SetNull)
+  categorizationSource   String                   @default("PLAID")
   splits                 TransactionSplit[]
-  isRemoved              Boolean          @default(false)
+  transferPairAsDebit    TransactionTransferPair? @relation("TransferPairDebit")
+  transferPairAsCredit   TransactionTransferPair? @relation("TransferPairCredit")
+  isRemoved              Boolean                  @default(false)
   lastSyncedAt           DateTime
-  createdAt              DateTime         @default(now())
-  updatedAt              DateTime         @updatedAt
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
   @@index([plaidAccountId, date])
   @@index([expenseTreatment, date])
   @@index([expenseCategory, date])
   @@index([transactionCategoryId, date])
+  @@index([cashFlowTreatment, date])
+}
+
+model TransactionTransferPair {
+  id                  String              @id @default(cuid())
+  userId              String
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debitTransactionId  String              @unique
+  debitTransaction    PlaidTransaction    @relation("TransferPairDebit", fields: [debitTransactionId], references: [id], onDelete: Cascade)
+  creditTransactionId String              @unique
+  creditTransaction   PlaidTransaction    @relation("TransferPairCredit", fields: [creditTransactionId], references: [id], onDelete: Cascade)
+  matchSource         TransferMatchSource @default(AUTO)
+  confidence          Float               @default(1)
+  matchedAt           DateTime            @default(now())
+
+  @@index([userId, matchedAt])
 }
 
 model TransactionCategory {
-  id           String    @id @default(cuid())
+  id           String                          @id @default(cuid())
   userId       String
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String
   slug         String
   color        String
-  isSystem     Boolean   @default(false)
+  isSystem     Boolean                         @default(false)
   archivedAt   DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime                        @default(now())
+  updatedAt    DateTime                        @updatedAt
   transactions PlaidTransaction[]
   rules        TransactionCategorizationRule[]
   splits       TransactionSplit[]
@@ -461,6 +482,25 @@ model NetWorthSnapshot {
   @@index([userId, capturedAt])
 }
 
+model AccountNetWorthSnapshot {
+  id          String                 @id @default(cuid())
+  userId      String
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  snapshotKey String
+  capturedAt  DateTime               @default(now())
+  source      NetWorthSnapshotSource
+  accountKey  String
+  accountName String
+  institution String?
+  kind        String
+  category    String
+  value       Float
+
+  @@unique([userId, snapshotKey, accountKey])
+  @@index([userId, accountKey, capturedAt])
+  @@index([userId, capturedAt])
+}
+
 enum NetWorthSnapshotSource {
   PLAID_SYNC
   COINBASE_SYNC
@@ -487,6 +527,18 @@ enum ExpenseTreatment {
   PERSONAL
   MIXED
   EXCLUDED
+}
+
+enum CashFlowTreatment {
+  AUTO
+  SPENDING
+  INCOME
+  TRANSFER
+}
+
+enum TransferMatchSource {
+  AUTO
+  MANUAL
 }
 
 enum ExpenseCategory {

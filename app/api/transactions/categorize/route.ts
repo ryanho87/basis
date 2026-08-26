@@ -5,15 +5,17 @@ import { getCurrentUserId } from "@/lib/user";
 
 export const runtime = "nodejs";
 const TREATMENTS = new Set(["UNREVIEWED", "PERSONAL", "BUSINESS", "MIXED", "EXCLUDED"]);
+const CASH_FLOW_TREATMENTS = new Set(["AUTO", "SPENDING", "INCOME", "TRANSFER"]);
 
 export async function PATCH(request: Request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
   const userId = await getCurrentUserId();
-  const body = (await request.json().catch(() => ({}))) as { transactionIds?: string[]; categoryId?: string; createRule?: boolean; treatment?: string };
+  const body = (await request.json().catch(() => ({}))) as { transactionIds?: string[]; categoryId?: string; createRule?: boolean; treatment?: string; cashFlowTreatment?: string };
   const ids = [...new Set(body.transactionIds ?? [])].slice(0, 500);
   if (!ids.length) return NextResponse.json({ error: "Choose at least one transaction" }, { status: 400 });
   if (body.treatment && !TREATMENTS.has(body.treatment)) return NextResponse.json({ error: "Invalid treatment" }, { status: 400 });
+  if (body.cashFlowTreatment && !CASH_FLOW_TREATMENTS.has(body.cashFlowTreatment)) return NextResponse.json({ error: "Invalid cash-flow treatment" }, { status: 400 });
   const category = body.categoryId ? await prisma.transactionCategory.findFirst({ where: { id: body.categoryId, userId, archivedAt: null } }) : null;
   if (body.categoryId && !category) return NextResponse.json({ error: "Category not found" }, { status: 404 });
   const transactions = await prisma.plaidTransaction.findMany({
@@ -25,6 +27,7 @@ export async function PATCH(request: Request) {
   const data = {
     ...(category ? { transactionCategoryId: category.id, categorizationSource: "MANUAL" } : {}),
     ...(body.treatment ? { expenseTreatment: body.treatment as never, deductiblePercent: body.treatment === "BUSINESS" ? 100 : body.treatment === "MIXED" ? 50 : 0 } : {}),
+    ...(body.cashFlowTreatment ? { cashFlowTreatment: body.cashFlowTreatment as never } : {}),
   };
   await prisma.plaidTransaction.updateMany({ where: { id: { in: ids } }, data });
 

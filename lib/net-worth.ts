@@ -1,6 +1,6 @@
 import type { FilingStatus, NetWorthSnapshotSource } from "@prisma/client";
 import { prisma } from "./prisma";
-import { computeNetWorth } from "./finance";
+import { computeNetWorth, valuateAccount } from "./finance";
 import {
   estimateOrdinaryWithdrawalRate,
   estimateUnrealizedGainTaxRate,
@@ -44,6 +44,7 @@ export type UnifiedNetWorth = {
   manualLiabilities: number;
   basisCoverage: number | null;
   connectedAccountsCount: number;
+  accountValues: AccountNetWorthValue[];
   byCategory: {
     cash: number;
     taxableInvestments: number;
@@ -52,6 +53,15 @@ export type UnifiedNetWorth = {
     realEstate: number;
     other: number;
   };
+};
+
+export type AccountNetWorthValue = {
+  accountKey: string;
+  accountName: string;
+  institution: string | null;
+  kind: "asset" | "liability";
+  category: string;
+  value: number;
 };
 
 export async function calculateUnifiedNetWorth(userId: string): Promise<UnifiedNetWorth> {
@@ -90,6 +100,27 @@ export async function calculateUnifiedNetWorth(userId: string): Promise<UnifiedN
     studentLoans: user.studentLoans,
     filingStatus: user.filingStatus,
   });
+  const accountValues: AccountNetWorthValue[] = [];
+  for (const account of user.accounts) {
+    const value = valuateAccount(account, undefined, user.filingStatus).totalValue;
+    const category = account.type === "CHECKING" || account.type === "SAVINGS"
+      ? "cash"
+      : account.type === "TAXABLE_BROKERAGE"
+        ? "investments"
+        : ["K401_TRADITIONAL", "K401_ROTH", "IRA_TRADITIONAL", "IRA_ROTH", "HSA"].includes(account.type)
+          ? "retirement"
+          : account.type === "CRYPTO" ? "crypto" : "other";
+    accountValues.push({ accountKey: `manual-account-${account.id}`, accountName: account.name, institution: account.institution || "Manually tracked", kind: "asset", category, value });
+  }
+  for (const asset of user.manualAssets) {
+    accountValues.push({ accountKey: `manual-asset-${asset.id}`, accountName: asset.name, institution: "Manually tracked", kind: "asset", category: asset.type === "REAL_ESTATE" ? "real-estate" : "other", value: asset.currentValue });
+  }
+  for (const liability of user.liabilities) {
+    accountValues.push({ accountKey: `manual-liability-${liability.id}`, accountName: liability.name, institution: "Manually tracked", kind: "liability", category: "debt", value: liability.currentBalance });
+  }
+  for (const loan of user.studentLoans) {
+    accountValues.push({ accountKey: `student-loan-${loan.id}`, accountName: loan.servicer || "Student loan", institution: "Manually tracked", kind: "liability", category: "debt", value: loan.balance });
+  }
 
   let plaidAssets = 0;
   let plaidLiabilities = 0;
@@ -111,10 +142,17 @@ export async function calculateUnifiedNetWorth(userId: string): Promise<UnifiedN
 
       if (LIABILITY_ACCOUNT_TYPES.has(type)) {
         plaidLiabilities += Math.max(0, balance);
+        accountValues.push({ accountKey: `plaid-${account.id}`, accountName: account.name, institution: item.institutionName || "Connected institution", kind: "liability", category: "debt", value: Math.max(0, balance) });
         continue;
       }
 
       plaidAssets += balance;
+      const snapshotCategory = CASH_ACCOUNT_TYPES.has(type)
+        ? "cash"
+        : type === "investment"
+          ? (isRothSubtype(subtype) || isTraditionalSubtype(subtype) ? "retirement" : "investments")
+          : "other";
+      accountValues.push({ accountKey: `plaid-${account.id}`, accountName: account.name, institution: item.institutionName || "Connected institution", kind: "asset", category: snapshotCategory, value: balance });
       if (CASH_ACCOUNT_TYPES.has(type)) {
         plaidCash += balance;
         continue;
@@ -179,6 +217,9 @@ export async function calculateUnifiedNetWorth(userId: string): Promise<UnifiedN
     .reduce((sum, account) => sum + (account.valueUsd ?? 0), 0);
   taxableValueRequiringBasis += coinbaseTaxableValue;
   connectedAccountsCount += coinbaseAccounts.length;
+  if (coinbaseAccounts.length > 0) {
+    accountValues.push({ accountKey: "coinbase-portfolio", accountName: "Coinbase portfolio", institution: "Coinbase", kind: "asset", category: "crypto", value: coinbaseAssets });
+  }
 
   const manualEstimatedTax = manual.totalAssets - manual.afterTaxAssets;
   const estimatedTaxLiability = manualEstimatedTax + plaidEstimatedTax;
@@ -203,6 +244,7 @@ export async function calculateUnifiedNetWorth(userId: string): Promise<UnifiedN
         ? taxableValueWithBasis / taxableValueRequiringBasis
         : null,
     connectedAccountsCount,
+    accountValues,
     byCategory: {
       cash: manual.byCategory.cash + plaidCash,
       taxableInvestments:
@@ -223,7 +265,8 @@ export async function captureNetWorthSnapshot(
   const value = await calculateUnifiedNetWorth(userId);
   const capturedAt = options.capturedAt ?? new Date();
   const snapshotKey = options.snapshotKey ?? netWorthDateKey(capturedAt);
-  const snapshot = await prisma.netWorthSnapshot.upsert({
+  const snapshot = await prisma.$transaction(async (tx) => {
+    const aggregate = await tx.netWorthSnapshot.upsert({
     where: { userId_dateKey: { userId, dateKey: snapshotKey } },
     update: {
       capturedAt,
@@ -257,6 +300,25 @@ export async function captureNetWorthSnapshot(
       manualLiabilities: value.manualLiabilities,
       basisCoverage: value.basisCoverage,
     },
+    });
+    await tx.accountNetWorthSnapshot.deleteMany({ where: { userId, snapshotKey } });
+    if (value.accountValues.length > 0) {
+      await tx.accountNetWorthSnapshot.createMany({
+        data: value.accountValues.map((account) => ({
+          userId,
+          snapshotKey,
+          capturedAt,
+          source,
+          accountKey: account.accountKey,
+          accountName: account.accountName,
+          institution: account.institution,
+          kind: account.kind,
+          category: account.category,
+          value: account.value,
+        })),
+      });
+    }
+    return aggregate;
   });
   return { value, snapshot };
 }
