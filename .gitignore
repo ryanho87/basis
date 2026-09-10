@@ -49,3 +49,6 @@ next-env.d.ts
 *.db-journal
 prisma/*.db
 prisma/*.db-journal
+
+# Machine-specific Claude Code permission grants
+.claude/settings.local.json
