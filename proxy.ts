@@ -6,7 +6,10 @@ const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/privacy", "/terms"]);
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const remoteMcpPath = pathname === "/api/mcp" || pathname === "/oauth/authorize" || pathname.startsWith("/.well-known/oauth-protected-resource");
-  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/api/auth/") || remoteMcpPath) {
+  // Vercel Cron authenticates with CRON_SECRET rather than a browser session.
+  // Let only this exact path reach its route-level timing-safe bearer check.
+  const scheduledRefreshPath = pathname === "/api/cron/financial-refresh";
+  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/api/auth/") || remoteMcpPath || scheduledRefreshPath) {
     return NextResponse.next();
   }
 
