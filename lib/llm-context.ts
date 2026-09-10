@@ -3,6 +3,8 @@ import { computeNetWorth, projectIncome } from "./finance";
 import { computeTax } from "./tax";
 import { formatCurrency, formatPercent } from "./utils";
 import { getRsuPriceEstimates } from "./rsu-pricing";
+import { buildMoneyPlan } from "./money-plan";
+import { loadMoneyPlan } from "./money-plan-server";
 import { CAPABILITY_LABELS, deriveCapabilities, derivePersona, personaLabel } from "./profile-capabilities";
 
 // Build a structured, compact financial snapshot to inject as the LLM's
@@ -174,6 +176,21 @@ export async function buildFinancialContext(userId: string): Promise<string> {
     for (const l of user.studentLoans) {
       lines.push(`- ${l.servicer ?? l.loanType}: ${formatCurrency(l.balance)} at ${formatPercent(l.interestRate / 100, 2)}${l.pslfEligible ? " (PSLF eligible)" : ""}${l.repaymentPlan ? ` plan: ${l.repaymentPlan}` : ""}`);
     }
+  }
+
+  const moneyPlan = await loadMoneyPlan(userId);
+  if (moneyPlan.baseline.hasPlanRecord || moneyPlan.commitments.length > 0) {
+    const plan = buildMoneyPlan(moneyPlan.baseline, moneyPlan.levers, moneyPlan.commitments);
+    lines.push("");
+    lines.push(`## Saved Money Plan (${plan.taxYear})`);
+    lines.push(`- Total compensation ${formatCurrency(plan.summary.totalCompensation)} → after pre-tax ${formatCurrency(plan.summary.incomeAfterPretax)} → after taxes ${formatCurrency(plan.summary.afterTaxIncome)} → left for life ${formatCurrency(plan.summary.leftForLife)} (${formatCurrency(plan.summary.leftForLifeMonthly)}/month)`);
+    lines.push(`- Savings rate ${formatPercent(plan.summary.savingsRate)} of total compensation`);
+    const commitmentSection = plan.sections.find((section) => section.key === "commitments");
+    for (const row of commitmentSection?.rows ?? []) {
+      lines.push(`- Commitment: ${row.label} ${formatCurrency(row.annual)}/yr (${formatPercent(row.pctOfComp)} of comp)`);
+    }
+    for (const warning of plan.warnings) lines.push(`- Plan warning: ${warning}`);
+    lines.push(`- The user can adjust levers and commitments on the Money Plan page (/plan); suggest concrete lever changes there rather than inventing new budgets.`);
   }
 
   if (user.plannedSales.length > 0) {

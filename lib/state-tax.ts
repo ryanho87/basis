@@ -7,7 +7,7 @@
 // year's tables are actually in use when a plan year runs ahead of what the
 // FTB / SSA / EDD have published.
 
-import { FilingStatus } from "@prisma/client";
+import type { FilingStatus } from "@prisma/client";
 
 type Bracket = { rate: number; threshold: number };
 

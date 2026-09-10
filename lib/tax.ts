@@ -11,7 +11,7 @@
 // `totalTaxWithState` (federal + state income tax) or `totalTaxWithPayroll`
 // (adds employee-side FICA/SDI) for the all-in figure.
 
-import { FilingStatus } from "@prisma/client";
+import type { FilingStatus } from "@prisma/client";
 import {
   computePayrollTax,
   computeStateTax,

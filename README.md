@@ -13,6 +13,7 @@ Personal finance for tech workers and high-income professionals. Tracks lot-leve
 - **RSU grants** with auto-generated vest schedules; mark-as-vested locks FMV as cost basis and creates a linked AssetLot
 - **Income projection** for the year — paycheck profile + W-2 YTD snapshots + RSU vests + S-Corp distributions
 - **Tax projection** with federal brackets, LTCG stacking, NIIT exposure, California income tax (brackets, Mental Health Services surtax) and employee payroll taxes (Social Security, Medicare, Additional Medicare, CA SDI), with threshold tracker UI. Other states are reported as not modeled rather than estimated
+- **Money plan** — the full-year waterfall from total compensation to "left for life": pre-tax deductions, federal/state/payroll taxes, then savings goals, debt payments, and fixed commitments. Persona-specific levers (percent of RSU vests sold, 401(k) deferral, S-Corp salary vs. distribution, Solo 401(k), health premiums through the corporation) preview instantly against the saved plan before anything is committed
 - **Planned-sale scenarios** — model a sale before you make it: ST/LT gain split at the planned date, incremental tax vs. your projected year, lot selection (FIFO / HIFO / tax-aware / specific lots), and a hint showing what smarter lot selection would save
 - **LLM onboarding** — chat-driven profile setup that recommends strategies tailored to the user's situation
 - **LLM chat** — the configured Gateway model knows your full financial snapshot and can reason about tax-efficient liquidation, debt strategy, etc.
