@@ -500,11 +500,38 @@ model AccountNetWorthSnapshot {
   @@index([userId, capturedAt])
 }
 
+model ScheduledRefreshRun {
+  id                String                 @id @default(cuid())
+  window            String
+  candidate         String?
+  trigger           String?
+  status            ScheduledRefreshStatus @default(RUNNING)
+  eligibleProfiles  Int                    @default(0)
+  snapshotsCaptured Int                    @default(0)
+  refreshedProfiles Int                    @default(0)
+  failedProfiles    Int                    @default(0)
+  errorsJson        String?
+  startedAt         DateTime               @default(now())
+  completedAt       DateTime?
+
+  @@index([startedAt])
+  @@index([status, startedAt])
+}
+
+enum ScheduledRefreshStatus {
+  RUNNING
+  SUCCEEDED
+  PARTIAL
+  FAILED
+  SKIPPED
+}
+
 enum NetWorthSnapshotSource {
   PLAID_SYNC
   COINBASE_SYNC
   DASHBOARD
   MANUAL
+  SCHEDULED_REFRESH
 }
 
 enum PlaidSyncStatus {

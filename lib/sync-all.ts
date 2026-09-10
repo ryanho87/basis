@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { NetWorthSnapshotSource } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { captureNetWorthSnapshot, netWorthDateKey } from "@/lib/net-worth";
 import { syncCoinbase, type CoinbaseSyncSummary } from "@/lib/coinbase/sync";
@@ -14,7 +15,11 @@ export type FullSyncSummary = {
 
 export async function syncAllFinancialAccounts(
   userId: string,
-  options: { snapshotSlot?: "morning" | "market-close"; capturedAt?: Date } = {},
+  options: {
+    snapshotSlot?: "morning" | "market-close";
+    capturedAt?: Date;
+    snapshotSource?: NetWorthSnapshotSource;
+  } = {},
 ): Promise<FullSyncSummary> {
   const capturedAt = options.capturedAt ?? new Date();
   const errors: string[] = [];
@@ -42,7 +47,7 @@ export async function syncAllFinancialAccounts(
 
   const dayKey = netWorthDateKey(capturedAt);
   const snapshotKey = options.snapshotSlot ? `${dayKey}:${options.snapshotSlot}` : dayKey;
-  await captureNetWorthSnapshot(userId, "PLAID_SYNC", { snapshotKey, capturedAt });
+  await captureNetWorthSnapshot(userId, options.snapshotSource ?? "PLAID_SYNC", { snapshotKey, capturedAt });
 
   return { plaid, coinbase, errors, snapshotKey };
 }
