@@ -40,7 +40,7 @@ npm run prisma:generate
 
 # Production/shared database: set pooled DATABASE_URL and direct
 # DATABASE_URL_UNPOOLED values (the Vercel Neon integration does this), then:
-npx prisma migrate deploy
+npm run db:migrate:deploy
 
 # Local-only database: DATABASE_URL="file:./prisma/dev.db", then:
 npm run db:migrate:sqlite
@@ -89,6 +89,8 @@ POSTGRES_DATABASE_URL="postgresql://..." npm run db:migrate:sqlite-to-postgres
 ```
 
 The migration refuses a non-empty target and rolls back unless every table count and every numeric financial total reconciles. After it succeeds, make the pooled Neon URL the production `DATABASE_URL`; Prisma migrations use `DATABASE_URL_UNPOOLED`. Production rejects `file:` URLs.
+
+After cutover, migrations are automatic: `npm run build` starts with `scripts/migrate-deploy.mjs`, which runs `prisma migrate deploy` on Vercel production builds and aborts the build if a migration fails, so the previous deployment stays live. It is a no-op for local SQLite builds and for Vercel preview builds (which share the production database) unless `MIGRATE_ON_PREVIEW=1` is set. To apply migrations by hand, run `npm run db:migrate:deploy`.
 
 Invite links place their one-time token in the URL fragment. Basis immediately exchanges it for a ten-minute HttpOnly, SameSite=Strict cookie and removes the fragment from browser history before rendering signup details.
 

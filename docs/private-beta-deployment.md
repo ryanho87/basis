@@ -50,7 +50,7 @@ Invites expire after 72 hours by default. Use `--hours` to choose a value from 1
 
 ## Production cutover checklist
 
-- Keep the Vercel-managed Neon database connected, run `prisma migrate deploy` through `DATABASE_URL_UNPOOLED`, and use the pooled `DATABASE_URL` at runtime. The initial SQLite data migration and reconciliation completed on August 25, 2026.
+- Keep the Vercel-managed Neon database connected and use the pooled `DATABASE_URL` at runtime. Migrations apply automatically: `npm run build` runs `scripts/migrate-deploy.mjs` (`prisma migrate deploy` through `DATABASE_URL_UNPOOLED`) on Vercel production builds and fails the build, leaving the last deployment live, if a migration errors. Preview builds skip it because they share the database. The initial SQLite data migration and reconciliation completed on August 25, 2026.
 - Set `COINBASE_LEGACY_USER_ID` to the sole owner profile. Do not create Coinbase connections for other profiles until per-profile credentials or OAuth ships.
 - Add durable serverless rate limiting to AI, upload, and financial-sync endpoints.
 - Enable Vercel AI Gateway Zero Data Retention and no-prompt-training controls, then set `AI_GATEWAY_ZDR_CONFIRMED=true`. Until then, production AI endpoints return 503.

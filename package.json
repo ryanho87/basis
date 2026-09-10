@@ -19,11 +19,12 @@
     "test:money-plan": "tsx scripts/evaluate-money-plan.ts",
     "test:expenses": "tsx scripts/evaluate-expense-categorization.ts",
     "test:tenant": "tsx scripts/evaluate-tenant-isolation.ts",
-    "build": "next build",
+    "build": "node scripts/migrate-deploy.mjs && next build",
     "start": "next start",
     "lint": "eslint",
     "ios:sync": "cap sync ios",
-    "ios:open": "cap open ios"
+    "ios:open": "cap open ios",
+    "db:migrate:deploy": "MIGRATE_ON_BUILD=1 node scripts/migrate-deploy.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
