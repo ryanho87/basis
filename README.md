@@ -12,7 +12,7 @@ Personal finance for tech workers and high-income professionals. Tracks lot-leve
 - **Lot-level cost basis** for taxable + crypto accounts; holding-period (LT/ST) classification
 - **RSU grants** with auto-generated vest schedules; mark-as-vested locks FMV as cost basis and creates a linked AssetLot
 - **Income projection** for the year — paycheck profile + W-2 YTD snapshots + RSU vests + S-Corp distributions
-- **Tax projection** with federal brackets, LTCG stacking, NIIT exposure, and threshold tracker UI
+- **Tax projection** with federal brackets, LTCG stacking, NIIT exposure, California income tax (brackets, Mental Health Services surtax) and employee payroll taxes (Social Security, Medicare, Additional Medicare, CA SDI), with threshold tracker UI. Other states are reported as not modeled rather than estimated
 - **Planned-sale scenarios** — model a sale before you make it: ST/LT gain split at the planned date, incremental tax vs. your projected year, lot selection (FIFO / HIFO / tax-aware / specific lots), and a hint showing what smarter lot selection would save
 - **LLM onboarding** — chat-driven profile setup that recommends strategies tailored to the user's situation
 - **LLM chat** — the configured Gateway model knows your full financial snapshot and can reason about tax-efficient liquidation, debt strategy, etc.
@@ -96,10 +96,10 @@ Invite links place their one-time token in the URL fragment. Basis immediately e
 - CSV import (Schwab / Fidelity / E*Trade / Coinbase)
 - Proactive LLM insights cron
 - ESPP, ISO/NQSO support
-- State tax brackets
+- State tax brackets beyond California
 - Real-time market prices
 
 ## Notes
 
-- Tax engine is a deliberately simplified federal model — no AMT, no state, no social security wage base. Good for planning, not for filing.
+- Tax engine is a deliberately simplified model — federal plus California only, no AMT, standard deduction only, no itemizing. When a plan year runs ahead of published tables (FTB brackets, SSA wage base, EDD SDI rate, IRS contribution limits) Basis reuses the newest published figures and says so. Good for planning, not for filing.
 - Invite-only authentication keeps each login attached to a separate financial profile.

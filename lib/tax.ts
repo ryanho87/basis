@@ -3,12 +3,23 @@
 // on top of ordinary income, and NIIT exposure.
 //
 // Limitations (intentional for v1):
-// - State taxes not modeled
+// - State taxes: California only, via ./state-tax.ts; other states report null
 // - AMT not modeled
-// - Social Security / Medicare wage base not modeled
 // - Standard deduction only (no itemizing)
+//
+// `totalTax` stays federal-only for backward compatibility; use
+// `totalTaxWithState` (federal + state income tax) or `totalTaxWithPayroll`
+// (adds employee-side FICA/SDI) for the all-in figure.
 
 import { FilingStatus } from "@prisma/client";
+import {
+  computePayrollTax,
+  computeStateTax,
+  stateLongTermGainRateProxy,
+  stateOrdinaryWithdrawalRateProxy,
+  type PayrollTaxResult,
+  type StateTaxResult,
+} from "./state-tax";
 
 // ---------- Brackets ----------
 
@@ -164,6 +175,8 @@ export type TaxInputs = {
   longTermGains: number;    // realized LTCG (- LT losses)
   shortTermGains?: number;  // already folded into ordinaryIncome typically; here for clarity
   pretaxDeductions?: number; // 401k, HSA, etc.
+  stateCode?: string | null; // e.g. "CA"; unsupported or missing states yield state: null
+  wages?: number;            // W-2 Medicare wages, for employee-side payroll tax; omit to skip
 };
 
 export type TaxResult = {
@@ -172,10 +185,17 @@ export type TaxResult = {
   ordinaryTax: number;
   ltcgTax: number;
   niitTax: number;
-  totalTax: number;
-  effectiveRate: number;
+  totalTax: number;          // federal income tax only (ordinary + LTCG + NIIT)
+  effectiveRate: number;     // federal
   marginalOrdinaryRate: number;
   marginalLtcgRate: number;
+  state: StateTaxResult | null;      // null when the state is unknown or unsupported
+  payroll: PayrollTaxResult | null;  // null when wages were not supplied
+  totalTaxWithState: number;         // federal + state income tax
+  totalTaxWithPayroll: number;       // federal + state + employee-side payroll
+  effectiveRateWithState: number;
+  combinedMarginalOrdinaryRate: number; // federal + state marginal on the next ordinary dollar
+  combinedMarginalLtcgRate: number;     // federal (incl. NIIT) + state marginal on the next LTCG dollar
   thresholds: {
     ltcg0to15: number;       // taxable income at which 0% LTCG ends
     ltcg15to20: number;      // taxable income at which 15% LTCG ends
@@ -222,6 +242,21 @@ export function computeTax(inputs: TaxInputs): TaxResult {
   const totalIncome = ordinaryIncome + longTermGains;
   const effectiveRate = totalIncome > 0 ? totalTax / totalIncome : 0;
 
+  const state = computeStateTax({
+    taxYear,
+    stateCode: inputs.stateCode,
+    filingStatus,
+    ordinaryIncome,
+    longTermGains,
+    pretaxDeductions,
+  });
+  const payroll = inputs.wages != null
+    ? computePayrollTax({ taxYear, wages: inputs.wages, filingStatus, stateCode: inputs.stateCode })
+    : null;
+  const totalTaxWithState = totalTax + (state?.totalTax ?? 0);
+  const totalTaxWithPayroll = totalTaxWithState + (payroll?.totalTax ?? 0);
+  const effectiveRateWithState = totalIncome > 0 ? totalTaxWithState / totalIncome : 0;
+
   // Marginal rates
   let marginalOrdinaryRate = 0;
   for (const b of ordBrackets) {
@@ -257,6 +292,13 @@ export function computeTax(inputs: TaxInputs): TaxResult {
     effectiveRate,
     marginalOrdinaryRate,
     marginalLtcgRate,
+    state,
+    payroll,
+    totalTaxWithState,
+    totalTaxWithPayroll,
+    effectiveRateWithState,
+    combinedMarginalOrdinaryRate: marginalOrdinaryRate + (state?.marginalRate ?? 0),
+    combinedMarginalLtcgRate: marginalLtcgRate + (state?.marginalRate ?? 0),
     thresholds: {
       ltcg0to15: ltcg15Threshold,
       ltcg15to20: ltcg20Threshold,
@@ -273,14 +315,15 @@ export function computeTax(inputs: TaxInputs): TaxResult {
 }
 
 // Estimate effective tax rate that should be applied to discount unrealized
-// gains for "after-tax net worth" — simplified: use 15% LTCG + 5% state proxy.
-export function estimateUnrealizedGainTaxRate() {
-  return 0.20; // 15% federal LTCG + ~5% blended state
+// gains for "after-tax net worth" — 15% federal LTCG plus a state proxy
+// (9.3% for California, 5% blended when the state is unknown).
+export function estimateUnrealizedGainTaxRate(stateCode?: string | null) {
+  return 0.15 + stateLongTermGainRateProxy(stateCode);
 }
 
 // Estimate ordinary income rate at withdrawal (used for traditional 401k discount).
-export function estimateOrdinaryWithdrawalRate(filingStatus: FilingStatus) {
+// Conservative: 22% federal plus a state proxy (8% CA, 5% unknown).
+export function estimateOrdinaryWithdrawalRate(filingStatus: FilingStatus, stateCode?: string | null) {
   void filingStatus;
-  // Conservative: assume 22% federal + 5% state at retirement.
-  return 0.27;
+  return 0.22 + stateOrdinaryWithdrawalRateProxy(stateCode);
 }

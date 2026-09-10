@@ -51,6 +51,8 @@ export async function buildFinancialContext(userId: string): Promise<string> {
   const tax = computeTax({
     taxYear,
     filingStatus: user.filingStatus,
+    stateCode: user.state,
+    wages: projection.projectedWages,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
@@ -136,9 +138,17 @@ export async function buildFinancialContext(userId: string): Promise<string> {
 
   lines.push("");
   lines.push(`## Tax Position (${taxYear})`);
-  lines.push(`- Estimated total tax: ${formatCurrency(tax.totalTax)} (${formatPercent(tax.effectiveRate)} effective)`);
-  lines.push(`- Marginal ordinary rate: ${formatPercent(tax.marginalOrdinaryRate)}`);
-  lines.push(`- Marginal LTCG rate: ${formatPercent(tax.marginalLtcgRate)}`);
+  lines.push(`- Estimated federal income tax: ${formatCurrency(tax.totalTax)} (${formatPercent(tax.effectiveRate)} effective)`);
+  if (tax.state) {
+    lines.push(`- Estimated ${tax.state.stateCode} income tax: ${formatCurrency(tax.state.totalTax)} (${formatPercent(tax.state.marginalRate)} marginal${tax.state.figuresAreProvisional ? `, using ${tax.state.figuresYear} tables` : ""})`);
+  } else {
+    lines.push(`- State income tax: not modeled${user.state ? ` for ${user.state}` : " (state not set)"} — treat as unknown, do not estimate`);
+  }
+  if (tax.payroll) {
+    lines.push(`- Employee payroll taxes (SS, Medicare${tax.payroll.stateDisability > 0 ? ", SDI" : ""}): ${formatCurrency(tax.payroll.totalTax)}`);
+  }
+  lines.push(`- Marginal ordinary rate: ${formatPercent(tax.marginalOrdinaryRate)} federal${tax.state ? `, ${formatPercent(tax.combinedMarginalOrdinaryRate)} combined` : ""}`);
+  lines.push(`- Marginal LTCG rate: ${formatPercent(tax.marginalLtcgRate)} federal${tax.state ? `, ${formatPercent(tax.combinedMarginalLtcgRate)} combined` : ""}`);
   lines.push(`- Room before next ordinary bracket: ${formatCurrency(tax.bracketRoom.nextOrdinaryBracketRoom)} ${tax.bracketRoom.nextOrdinaryBracketRate ? `(then ${formatPercent(tax.bracketRoom.nextOrdinaryBracketRate)})` : ""}`);
   lines.push(`- Additional LTCG before the 20% federal bracket: ${formatCurrency(tax.bracketRoom.ltcgRoomAt15)}`);
   lines.push(`- Additional LTCG eligible for the 0% federal bracket: ${formatCurrency(tax.bracketRoom.ltcgRoomAt0)}`);

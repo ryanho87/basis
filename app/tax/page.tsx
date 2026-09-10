@@ -49,10 +49,18 @@ export default async function TaxPage() {
   const tax = computeTax({
     taxYear,
     filingStatus: data.filingStatus,
+    stateCode: data.state,
+    wages: projection.projectedWages,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
   });
+  const stateTax = tax.state;
+  const payrollTax = tax.payroll;
+  const provenanceNotes = [
+    ...(stateTax?.notes ?? []),
+    ...(payrollTax?.notes ?? []),
+  ];
   const latestSnapshot = data.w2Snapshots[0] ?? null;
   const payrollCoverageDate = latestSnapshot
     ? new Date(latestSnapshot.payPeriodEnd ?? latestSnapshot.snapshotDate).toISOString().slice(0, 10)
@@ -71,14 +79,19 @@ export default async function TaxPage() {
             value={formatCurrency(projection.totalProjectedOrdinary, { compact: true })}
           />
           <Stat
-            label="Estimated total tax"
-            value={formatCurrency(tax.totalTax, { compact: true })}
-            hint={`${formatPercent(tax.effectiveRate)} effective`}
+            label={stateTax ? "Estimated income tax" : "Estimated federal tax"}
+            value={formatCurrency(tax.totalTaxWithState, { compact: true })}
+            hint={stateTax
+              ? `${formatCurrency(tax.totalTax, { compact: true })} federal + ${formatCurrency(stateTax.totalTax, { compact: true })} ${stateTax.stateCode} · ${formatPercent(tax.effectiveRateWithState)} effective`
+              : `${formatPercent(tax.effectiveRate)} effective · state not modeled`}
+            tone={stateTax ? "default" : "warning"}
           />
           <Stat
             label="Marginal ordinary"
-            value={formatPercent(tax.marginalOrdinaryRate)}
-            hint={`Next bracket in ${formatCurrency(tax.bracketRoom.nextOrdinaryBracketRoom, { compact: true })}`}
+            value={formatPercent(tax.combinedMarginalOrdinaryRate)}
+            hint={stateTax
+              ? `${formatPercent(tax.marginalOrdinaryRate)} federal + ${formatPercent(stateTax.marginalRate)} ${stateTax.stateCode} · next federal bracket in ${formatCurrency(tax.bracketRoom.nextOrdinaryBracketRoom, { compact: true })}`
+              : `Federal only · next bracket in ${formatCurrency(tax.bracketRoom.nextOrdinaryBracketRoom, { compact: true })}`}
           />
           <Stat
             label="Marginal LTCG"
@@ -87,6 +100,37 @@ export default async function TaxPage() {
             tone={tax.bracketRoom.niitOver > 0 ? "warning" : "default"}
           />
         </div>
+
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>{stateTax ? `${stateTax.stateCode} state tax and payroll` : "State tax and payroll"}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {stateTax ? (
+              <div className="grid gap-4 sm:grid-cols-4">
+                <Stat label={`${stateTax.stateCode} taxable income`} value={formatCurrency(stateTax.taxableIncome, { compact: true })} hint="After the state standard deduction" />
+                <Stat label={`${stateTax.stateCode} income tax`} value={formatCurrency(stateTax.totalTax, { compact: true })} hint={`${formatPercent(stateTax.effectiveRate)} effective · ${formatPercent(stateTax.marginalRate)} marginal${stateTax.surtax > 0 ? " incl. 1% MHST" : ""}`} />
+                <Stat
+                  label="Employee payroll taxes"
+                  value={payrollTax ? formatCurrency(payrollTax.totalTax, { compact: true }) : "—"}
+                  hint={payrollTax ? `SS ${formatCurrency(payrollTax.socialSecurity, { compact: true })} · Medicare ${formatCurrency(payrollTax.medicare + payrollTax.additionalMedicare, { compact: true })}${payrollTax.stateDisability > 0 ? ` · SDI ${formatCurrency(payrollTax.stateDisability, { compact: true })}` : ""}` : "No projected wages"}
+                />
+                <Stat label="All-in tax" value={formatCurrency(tax.totalTaxWithPayroll, { compact: true })} hint="Federal + state income tax + employee payroll" />
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                {data.state
+                  ? `Basis does not model ${data.state} income tax yet, so every figure on this page is federal-only. Rather than guess a bracket, the state line stays blank until it is supported.`
+                  : "Add your state in the Filing & state form below. California is modeled today; other states stay honestly blank rather than estimated."}
+              </p>
+            )}
+            {provenanceNotes.length > 0 ? (
+              <ul className="mt-4 space-y-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                {provenanceNotes.map((note) => <li key={note}>{note}</li>)}
+              </ul>
+            ) : null}
+          </CardContent>
+        </Card>
 
         <Card className="mb-6">
           <CardHeader>

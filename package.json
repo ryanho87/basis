@@ -15,6 +15,7 @@
     "auth:invite": "tsx scripts/create-auth-invite.ts",
     "test:income": "tsx scripts/evaluate-income-projection.ts",
     "test:physician": "tsx scripts/evaluate-physician-planning.ts",
+    "test:state-tax": "tsx scripts/evaluate-state-tax.ts",
     "test:expenses": "tsx scripts/evaluate-expense-categorization.ts",
     "test:tenant": "tsx scripts/evaluate-tenant-isolation.ts",
     "build": "next build",

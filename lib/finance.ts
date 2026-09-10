@@ -79,6 +79,7 @@ export function valuateAccount(
   account: Account & { lots: AssetLot[]; positions: HoldingPosition[] },
   prices?: Record<string, number>,
   filingStatus: FilingStatus = "SINGLE",
+  stateCode?: string | null,
 ): AccountWithValuation {
   const pricedLots = account.lots.map((l) => priceLot(l, prices?.[l.ticker]));
   const lotValue = pricedLots.reduce((s, l) => s + l.currentValue, 0);
@@ -88,9 +89,9 @@ export function valuateAccount(
 
   let afterTaxValue = totalValue;
   if (TAXABLE_TYPES.has(account.type)) {
-    afterTaxValue = totalValue - lotGain * estimateUnrealizedGainTaxRate();
+    afterTaxValue = totalValue - lotGain * estimateUnrealizedGainTaxRate(stateCode);
   } else if (TRADITIONAL_TYPES.has(account.type)) {
-    afterTaxValue = totalValue * (1 - estimateOrdinaryWithdrawalRate(filingStatus));
+    afterTaxValue = totalValue * (1 - estimateOrdinaryWithdrawalRate(filingStatus, stateCode));
   } else if (ROTH_TYPES.has(account.type)) {
     afterTaxValue = totalValue;
   }
@@ -111,6 +112,7 @@ export type NetWorthInputs = {
   liabilities: Liability[];
   studentLoans: StudentLoan[];
   filingStatus?: FilingStatus;
+  stateCode?: string | null; // sharpens the after-tax discount when the state is modeled
   prices?: Record<string, number>;
 };
 
@@ -135,7 +137,7 @@ export type NetWorthBreakdown = {
 export function computeNetWorth(inputs: NetWorthInputs): NetWorthBreakdown {
   const filingStatus = inputs.filingStatus ?? "SINGLE";
   const valuated = inputs.accounts.map((a) =>
-    valuateAccount(a, inputs.prices, filingStatus),
+    valuateAccount(a, inputs.prices, filingStatus, inputs.stateCode),
   );
 
   const cash = valuated
@@ -216,6 +218,7 @@ export type IncomeProjection = {
   projectedSCorpDistribution: number;
   projectedSCorpW2: number;
   projectedSCorpPassThrough: number;
+  projectedWages: number; // Medicare-wage proxy for employee payroll tax: W-2, bonus, RSU vests, owner payroll
   totalProjectedOrdinary: number;
   realizedSTCG: number;
   realizedLTCG: number;
@@ -310,6 +313,13 @@ export function projectIncome(inputs: IncomeProjectionInputs): IncomeProjection 
     additionalOrdinaryIncome +
     realizedSTCG;
 
+  const projectedWages =
+    projectedW2 +
+    projectedBonus +
+    rsu.rsuIncomeAfterSnapshot +
+    rsu.upcomingRsuIncome +
+    projectedSCorpW2;
+
   const profilePretax =
     (paycheck?.k401Contribution ?? 0) +
     (paycheck?.hsaContribution ?? 0) +
@@ -338,6 +348,7 @@ export function projectIncome(inputs: IncomeProjectionInputs): IncomeProjection 
     projectedSCorpDistribution,
     projectedSCorpW2,
     projectedSCorpPassThrough,
+    projectedWages,
     totalProjectedOrdinary,
     realizedSTCG,
     realizedLTCG,

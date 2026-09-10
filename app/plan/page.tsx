@@ -64,13 +64,25 @@ export default async function MoneyPlanPage() {
   const tax = computeTax({
     taxYear,
     filingStatus: data.filingStatus,
+    stateCode: data.state,
+    wages: projection.projectedWages,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
   });
   const federalWithheld = latestW2?.ytdFederalWithheld ?? 0;
+  const stateWithheld = latestW2?.ytdStateWithheld ?? 0;
   const federalReserveBeforePayments = Math.max(0, tax.totalTax - federalWithheld);
-  const cashAfterFederalReserve = plan.estimatedCashBeforeOwnerDistribution - federalReserveBeforePayments;
+  const stateReserveBeforePayments = tax.state ? Math.max(0, tax.state.totalTax - stateWithheld) : 0;
+  const cashAfterFederalReserve = plan.estimatedCashBeforeOwnerDistribution - federalReserveBeforePayments - stateReserveBeforePayments;
+  const stateLabel = tax.state ? `${tax.state.stateCode} income tax reserve before estimated payments` : null;
+  const stateNotes = [
+    ...(tax.state?.figuresAreProvisional ? [tax.state.notes[0]] : []),
+    ...(tax.payroll?.figuresAreProvisional ? [tax.payroll.notes[0]] : []),
+    ...(!tax.state ? [data.state
+      ? `State income tax for ${data.state} is not modeled yet, so the cash estimate above is before state tax. Basis would rather leave that blank than invent a bracket.`
+      : "Add your state on the Tax page. Without it the cash estimate above is before state income tax."] : []),
+  ];
   const salaryShare = plan.annualRevenue > plan.operatingExpenses
     ? plan.ownerW2Salary / (plan.annualRevenue - plan.operatingExpenses)
     : 0;
@@ -101,7 +113,7 @@ export default async function MoneyPlanPage() {
                 {formatCurrency(cashAfterFederalReserve, { compact: true })}
               </p>
               <p className="mt-3 max-w-[62ch] text-sm leading-6 text-zinc-400">
-                After operating expenses, owner payroll, employer payroll taxes, planned retirement contributions, and estimated federal income tax. Estimated payments already made are not yet tracked, so this number is deliberately conservative.
+                After operating expenses, owner payroll, employer payroll taxes, planned retirement contributions, and estimated federal{tax.state ? ` and ${tax.state.stateCode}` : ""} income tax. Estimated payments already made are not yet tracked, so this number is deliberately conservative.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-5 border-t border-zinc-800 pt-6 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
@@ -129,6 +141,9 @@ export default async function MoneyPlanPage() {
               <AllocationRow label="Employer payroll taxes" annual={plan.employerPayrollTaxes} monthly={plan.monthly.employerPayrollTaxes} />
               <AllocationRow label="Retirement contributions" annual={plan.totalRetirementContribution} monthly={plan.monthly.retirement} />
               <AllocationRow label="Federal tax reserve before estimated payments" annual={federalReserveBeforePayments} monthly={federalReserveBeforePayments / 12} />
+              {stateLabel ? (
+                <AllocationRow label={stateLabel} annual={stateReserveBeforePayments} monthly={stateReserveBeforePayments / 12} />
+              ) : null}
               <AllocationRow label="Cash remaining" annual={cashAfterFederalReserve} monthly={cashAfterFederalReserve / 12} strong />
             </div>
           </section>
@@ -172,6 +187,9 @@ export default async function MoneyPlanPage() {
               <CardContent className="space-y-3 text-sm">
                 <CheckLine label="Owner salary share" value={formatPercent(salaryShare)} />
                 <CheckLine label="Federal effective rate" value={formatPercent(tax.effectiveRate)} />
+                {tax.state ? <CheckLine label={`${tax.state.stateCode} effective rate`} value={formatPercent(tax.state.effectiveRate)} /> : null}
+                {tax.payroll ? <CheckLine label="Employee payroll taxes" value={formatCurrency(tax.payroll.totalTax)} /> : null}
+                <CheckLine label="Combined marginal rate" value={formatPercent(tax.combinedMarginalOrdinaryRate)} />
                 <CheckLine label="Retirement ceiling" value={formatCurrency(plan.illustrativeRetirementCeiling)} />
                 <p className="pt-1 text-xs leading-5 text-zinc-500">
                   The retirement ceiling excludes catch-up contributions and assumes no elective deferrals through another employer.
@@ -179,14 +197,14 @@ export default async function MoneyPlanPage() {
               </CardContent>
             </Card>
 
-            {plan.warnings.length > 0 ? (
+            {plan.warnings.length + stateNotes.length > 0 ? (
               <div className="rounded-xl bg-amber-50 p-4 text-amber-950 dark:bg-amber-950/35 dark:text-amber-100">
                 <div className="flex items-center gap-2 text-sm font-medium">
                   <CircleAlert className="size-4" aria-hidden="true" />
                   Needs confirmation
                 </div>
                 <ul className="mt-3 space-y-2 text-xs leading-5 text-amber-900/80 dark:text-amber-100/75">
-                  {plan.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  {[...plan.warnings, ...stateNotes].map((warning) => <li key={warning}>{warning}</li>)}
                 </ul>
               </div>
             ) : null}

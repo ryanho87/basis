@@ -59,6 +59,8 @@ async function incomeContext(userId: string, taxYear: number) {
   const tax = computeTax({
     taxYear,
     filingStatus: user.filingStatus,
+    stateCode: user.state,
+    wages: projection.projectedWages,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
@@ -94,6 +96,9 @@ export async function getFinancialSummary(boundUserId?: string) {
       projectedLongTermGains: round(income.projection.realizedLTCG),
       estimatedPretaxDeductions: round(income.projection.estimatedPretax),
       federalTaxEstimate: round(income.tax.totalTax),
+      stateTaxEstimate: income.tax.state ? round(income.tax.state.totalTax) : null,
+      stateTaxModeled: income.tax.state?.stateCode ?? null,
+      employeePayrollTaxEstimate: income.tax.payroll ? round(income.tax.payroll.totalTax) : null,
       ltcgZeroPercentRoom: round(income.tax.bracketRoom.ltcgRoomAt0),
       ltcgFifteenPercentRoom: round(income.tax.bracketRoom.ltcgRoomAt15),
       niitExposure: round(income.tax.bracketRoom.niitOver),
@@ -342,6 +347,15 @@ export async function getIncomeTaxPosition(taxYear = new Date().getFullYear(), b
       taxableOrdinary: round(tax.taxableOrdinary), taxableLongTermGains: round(tax.taxableLtcg),
       totalTax: round(tax.totalTax), effectiveRate: tax.effectiveRate,
       marginalOrdinaryRate: tax.marginalOrdinaryRate, marginalLongTermGainsRate: tax.marginalLtcgRate,
+      state: tax.state ? {
+        stateCode: tax.state.stateCode, taxableIncome: round(tax.state.taxableIncome), totalTax: round(tax.state.totalTax),
+        marginalRate: tax.state.marginalRate, figuresYear: tax.state.figuresYear, figuresAreProvisional: tax.state.figuresAreProvisional, notes: tax.state.notes,
+      } : null,
+      payroll: tax.payroll ? {
+        wages: round(tax.payroll.wages), socialSecurity: round(tax.payroll.socialSecurity), medicare: round(tax.payroll.medicare),
+        additionalMedicare: round(tax.payroll.additionalMedicare), stateDisability: round(tax.payroll.stateDisability), totalTax: round(tax.payroll.totalTax),
+      } : null,
+      totalTaxWithState: round(tax.totalTaxWithState), combinedMarginalOrdinaryRate: tax.combinedMarginalOrdinaryRate,
       thresholds: tax.thresholds,
       bracketRoom: Object.fromEntries(Object.entries(tax.bracketRoom).map(([key, value]) => [key, value === null ? null : round(value)])),
     },
@@ -446,16 +460,18 @@ export async function modelStockSale(input: { ticker: string; shares: number; pr
   ];
   if (lots.length === 0) throw new Error(`No usable ${ticker} tax lots were found.`);
   const strategies = input.strategy ? [input.strategy] : ["FIFO", "HIFO", "TAX_OPTIMAL"] as const;
-  const baselineInput = { taxYear: saleDate.getUTCFullYear(), filingStatus: income.user.filingStatus, ordinaryIncome: income.projection.totalProjectedOrdinary, longTermGains: income.projection.realizedLTCG, pretaxDeductions: income.projection.estimatedPretax };
+  const baselineInput = { taxYear: saleDate.getUTCFullYear(), filingStatus: income.user.filingStatus, stateCode: income.user.state, ordinaryIncome: income.projection.totalProjectedOrdinary, longTermGains: income.projection.realizedLTCG, pretaxDeductions: income.projection.estimatedPretax };
   const baselineTax = computeTax(baselineInput);
   const results = strategies.map((strategy) => {
     const sale = allocate(orderSaleLots(lots, strategy, saleDate), input.shares, input.pricePerShare, saleDate);
     const withSale = computeTax({ ...baselineInput, ordinaryIncome: baselineInput.ordinaryIncome + sale.shortTermGain, longTermGains: baselineInput.longTermGains + sale.longTermGain });
-    const incrementalTax = withSale.totalTax - baselineTax.totalTax;
+    const incrementalFederalTax = withSale.totalTax - baselineTax.totalTax;
+    const incrementalStateTax = (withSale.state?.totalTax ?? 0) - (baselineTax.state?.totalTax ?? 0);
+    const incrementalTax = incrementalFederalTax + incrementalStateTax;
     return {
       strategy, sharesFilled: round(sale.sharesFilled), unfilledShares: round(sale.unfilledShares), proceeds: round(sale.proceeds),
       costBasis: round(sale.costBasis), shortTermGain: round(sale.shortTermGain), longTermGain: round(sale.longTermGain),
-      incrementalFederalTax: round(incrementalTax), afterTaxProceeds: round(sale.proceeds - incrementalTax),
+      incrementalFederalTax: round(incrementalFederalTax), incrementalStateTax: round(incrementalStateTax), incrementalTax: round(incrementalTax), afterTaxProceeds: round(sale.proceeds - incrementalTax),
       crossesNiit: baselineTax.bracketRoom.niitOver <= 0 && withSale.bracketRoom.niitOver > 0,
       allocations: sale.allocations.map((row) => ({ ...row, sharesSold: round(row.sharesSold), proceeds: round(row.proceeds), costBasis: round(row.costBasis), gain: round(row.gain) })),
     };
