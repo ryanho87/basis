@@ -15,7 +15,7 @@ import {
   Lightbulb,
   Sparkles,
   LogOut,
-  Stethoscope,
+  PiggyBank,
   ReceiptText,
   Menu,
   X,
@@ -28,6 +28,7 @@ import type { FinancialCapability, PrimaryPersona } from "@/lib/profile-capabili
 const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/accounts", label: "Accounts", icon: Wallet },
+  { href: "/plan", label: "Money Plan", icon: PiggyBank },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
   { href: "/equity", label: "Equity & RSUs", icon: TrendingUp },
   { href: "/tax", label: "Tax Projection", icon: Calculator },
@@ -80,7 +81,6 @@ export function Sidebar({ persona, capabilities = [] }: SidebarProps) {
     .filter((item) => !(physicianMode && item.href === "/equity"))
     .map((item) => physicianMode && item.href === "/tax" ? { ...item, label: "Tax Plan" } : item);
   if (physicianMode || hasOwnerBusiness) {
-    navigation.splice(2, 0, { href: "/plan", label: "Money Plan", icon: Stethoscope });
     navigation.splice(3, 0, { href: "/expenses", label: "Expenses", icon: ReceiptText });
   }
 

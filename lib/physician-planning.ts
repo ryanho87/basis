@@ -35,20 +35,26 @@ type AnnualLimits = {
   socialSecurityWageBase: number;
   employeeDeferral: number;
   definedContribution: number;
+  figuresYear: number;            // year whose published limits are in use
+  figuresAreProvisional: boolean; // true when taxYear runs ahead of published limits
 };
 
-function annualLimits(taxYear: number): AnnualLimits {
-  if (taxYear >= 2026) {
-    return {
-      socialSecurityWageBase: 184_500,
-      employeeDeferral: 24_500,
-      definedContribution: 72_000,
-    };
-  }
+// Latest published IRS / SSA limits. Add a row each autumn when the IRS
+// notice and SSA COLA announcement land; later years reuse the newest row
+// and flag themselves as provisional instead of silently guessing.
+const PUBLISHED_LIMITS: Record<number, Omit<AnnualLimits, "figuresYear" | "figuresAreProvisional">> = {
+  2025: { socialSecurityWageBase: 176_100, employeeDeferral: 23_500, definedContribution: 70_000 },
+  2026: { socialSecurityWageBase: 184_500, employeeDeferral: 24_500, definedContribution: 72_000 },
+};
+
+export function annualLimits(taxYear: number): AnnualLimits {
+  const years = Object.keys(PUBLISHED_LIMITS).map(Number);
+  const eligible = years.filter((year) => year <= taxYear);
+  const figuresYear = eligible.length ? Math.max(...eligible) : Math.min(...years);
   return {
-    socialSecurityWageBase: 176_100,
-    employeeDeferral: 23_500,
-    definedContribution: 70_000,
+    ...PUBLISHED_LIMITS[figuresYear],
+    figuresYear,
+    figuresAreProvisional: taxYear > figuresYear,
   };
 }
 
@@ -100,6 +106,9 @@ export function buildPhysicianMoneyPlan(inputs: PhysicianPlanInputs): PhysicianM
   const estimatedCashBeforeOwnerDistribution = estimatedPassThroughIncome;
   const warnings: string[] = [];
 
+  if (limits.figuresAreProvisional) {
+    warnings.push(`${inputs.taxYear} contribution limits and the Social Security wage base are not published yet, so this plan uses ${limits.figuresYear} figures. Expect small upward revisions.`);
+  }
   if (annualRevenue <= 0) {
     warnings.push("Add expected annual practice revenue before treating this as an allocation plan.");
   }

@@ -148,6 +148,7 @@ export function allocateSale<L extends AssetLot>(
 export type SaleImpactBaseline = {
   taxYear?: number;
   filingStatus: FilingStatus;
+  stateCode?: string | null; // when modeled (CA), incremental tax includes state
   // Projected ordinary income for the year *before* this sale (includes STCG
   // already realized elsewhere).
   ordinaryIncome: number;
@@ -158,7 +159,9 @@ export type SaleImpactBaseline = {
 export type SaleImpact = {
   baseline: TaxResult;
   withSale: TaxResult;
-  incrementalTax: number;
+  incrementalTax: number;        // federal + modeled state
+  incrementalFederalTax: number;
+  incrementalStateTax: number;   // 0 when the state is unknown or unsupported
   afterTaxProceeds: number;
   // Incremental tax as a share of the gain (0 when there's no gain).
   effectiveRateOnGain: number;
@@ -172,6 +175,7 @@ export function computeSaleImpact(
   const baseline = computeTax({
     taxYear: base.taxYear,
     filingStatus: base.filingStatus,
+    stateCode: base.stateCode,
     ordinaryIncome: base.ordinaryIncome,
     longTermGains: base.longTermGains,
     pretaxDeductions: base.pretaxDeductions,
@@ -179,16 +183,21 @@ export function computeSaleImpact(
   const withSale = computeTax({
     taxYear: base.taxYear,
     filingStatus: base.filingStatus,
+    stateCode: base.stateCode,
     ordinaryIncome: base.ordinaryIncome + sale.shortTermGain,
     longTermGains: base.longTermGains + sale.longTermGain,
     pretaxDeductions: base.pretaxDeductions,
   });
-  const incrementalTax = withSale.totalTax - baseline.totalTax;
+  const incrementalFederalTax = withSale.totalTax - baseline.totalTax;
+  const incrementalStateTax = (withSale.state?.totalTax ?? 0) - (baseline.state?.totalTax ?? 0);
+  const incrementalTax = incrementalFederalTax + incrementalStateTax;
   const totalGain = sale.shortTermGain + sale.longTermGain;
   return {
     baseline,
     withSale,
     incrementalTax,
+    incrementalFederalTax,
+    incrementalStateTax,
     afterTaxProceeds: sale.proceeds - incrementalTax,
     effectiveRateOnGain: totalGain > 0 ? incrementalTax / totalGain : 0,
     crossesNiit:

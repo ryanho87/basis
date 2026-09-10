@@ -47,6 +47,8 @@ model User {
   netWorthSnapshots        NetWorthSnapshot[]
   chatThreads              ChatThread[]
   strategySuggestions      StrategySuggestion[]
+  moneyPlan                MoneyPlan?
+  planCommitments          PlanCommitment[]
   authIdentity             AuthUser?
   transactionCategories    TransactionCategory[]
   transactionRules         TransactionCategorizationRule[]
@@ -584,6 +586,50 @@ enum ExpenseCategory {
   UTILITIES
   TRANSFER
   OTHER
+}
+
+// ---------- Money plan ----------
+// One saved plan per profile: persona-specific levers (JSON, validated in
+// lib/money-plan.ts) plus the personal commitments that sit below after-tax
+// income. The planner page holds an unsaved draft against this record.
+model MoneyPlan {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planYear        Int?
+  assumptionsJson String   @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PlanCommitment {
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  kind       PlanCommitmentKind
+  amountMode PlanAmountMode     @default(ANNUAL)
+  amount     Float
+  sortOrder  Int                @default(0)
+  active     Boolean            @default(true)
+  notes      String?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@index([userId, sortOrder])
+}
+
+enum PlanCommitmentKind {
+  SAVINGS
+  DEBT
+  FIXED_EXPENSE
+  GIVING
+}
+
+enum PlanAmountMode {
+  ANNUAL
+  MONTHLY
+  PERCENT_OF_AFTER_TAX
 }
 
 enum FilingStatus {

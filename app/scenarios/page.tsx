@@ -52,6 +52,7 @@ export default async function ScenariosPage() {
 
   const baseline: SaleImpactBaseline = {
     filingStatus: data.filingStatus,
+    stateCode: data.state,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
@@ -132,7 +133,9 @@ export default async function ScenariosPage() {
                   label="Combined incremental tax"
                   tone={combined.incrementalTax > 0 ? "warning" : "default"}
                   value={formatCurrency(combined.incrementalTax, { compact: true })}
-                  hint="All sales stacked in one tax year"
+                  hint={combined.baseline.state
+                    ? `Federal ${formatCurrency(combined.incrementalFederalTax, { compact: true })} + ${combined.baseline.state.stateCode} ${formatCurrency(combined.incrementalStateTax, { compact: true })}, stacked in one tax year`
+                    : "Federal only, all sales stacked in one tax year"}
                 />
                 <Stat
                   label="Combined after-tax proceeds"
@@ -173,7 +176,7 @@ export default async function ScenariosPage() {
                       value={formatCurrency(impact.incrementalTax)}
                       sub={
                         allocation.totalGain > 0
-                          ? `${formatPercent(impact.effectiveRateOnGain)} of gain`
+                          ? `${formatPercent(impact.effectiveRateOnGain)} of gain${impact.baseline.state ? ` incl. ${impact.baseline.state.stateCode}` : ", federal only"}`
                           : undefined
                       }
                     />

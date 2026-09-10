@@ -60,6 +60,8 @@ export default async function DashboardPage() {
   const tax = computeTax({
     taxYear,
     filingStatus: data.filingStatus,
+    stateCode: data.state,
+    wages: projection.projectedWages,
     ordinaryIncome: projection.totalProjectedOrdinary,
     longTermGains: projection.realizedLTCG,
     pretaxDeductions: projection.estimatedPretax,
@@ -76,7 +78,9 @@ export default async function DashboardPage() {
         plannedCashDistribution: data.sCorpProfile.projectedDistribution,
       })
     : null;
-  const physicianFederalReserve = Math.max(0, tax.totalTax - (data.w2Snapshots[0]?.ytdFederalWithheld ?? 0));
+  const physicianFederalReserve =
+    Math.max(0, tax.totalTax - (data.w2Snapshots[0]?.ytdFederalWithheld ?? 0)) +
+    (tax.state ? Math.max(0, tax.state.totalTax - (data.w2Snapshots[0]?.ytdStateWithheld ?? 0)) : 0);
 
   return (
     <div>
@@ -161,8 +165,10 @@ export default async function DashboardPage() {
               />
               <Stat
                 label={`${new Date().getFullYear()} Projected Tax`}
-                value={formatCurrency(tax.totalTax, { compact: true })}
-                hint={`${formatPercent(tax.effectiveRate)} effective · ${formatPercent(tax.marginalOrdinaryRate)} marginal`}
+                value={formatCurrency(tax.totalTaxWithState, { compact: true })}
+                hint={tax.state
+                  ? `Federal + ${tax.state.stateCode} · ${formatPercent(tax.effectiveRateWithState)} effective · ${formatPercent(tax.combinedMarginalOrdinaryRate)} marginal`
+                  : `Federal only · ${formatPercent(tax.effectiveRate)} effective · ${formatPercent(tax.marginalOrdinaryRate)} marginal`}
               />
             </div>
 
