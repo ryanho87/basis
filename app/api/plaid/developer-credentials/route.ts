@@ -30,9 +30,9 @@ export async function PUT(request: Request) {
     where: { userId },
     include: { _count: { select: { items: true } } },
   });
-  if (existing && existing._count.items > 0 && decryptPlaidSecret(existing.clientIdEncrypted) !== clientId) {
+  if (existing && existing._count.items > 0 && (decryptPlaidSecret(existing.clientIdEncrypted) !== clientId || existing.environment !== environment)) {
     return Response.json(
-      { error: "Disconnect existing institutions before switching to a different Plaid client ID" },
+      { error: "Disconnect existing institutions before switching Plaid accounts or changing between test and real accounts." },
       { status: 409 },
     );
   }

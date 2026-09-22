@@ -7,7 +7,6 @@ import { calculateUnifiedNetWorth } from "@/lib/net-worth";
 import { formatDate } from "@/lib/utils";
 import { PageBody, PageHeader } from "@/components/page-header";
 import { PlaidConnections } from "@/components/plaid-connections";
-import { PlaidDeveloperSettings } from "@/components/plaid-developer-settings";
 import { getPlaidCredentialStatus } from "@/lib/plaid/developer-credentials";
 import { CoinbaseConnection } from "@/components/coinbase-connection";
 import { SyncAllButton } from "@/components/sync-all-button";
@@ -217,46 +216,50 @@ export default async function AccountsPage() {
     <div>
       <PageHeader
         title="Accounts"
-        description="Your money, finally forced into one room. Automatic refresh runs at 6 AM Pacific and around the U.S. market close."
+        description="Connect your banks, investments, and loans to see your balances together."
         actions={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-            <SyncAllButton disabled={plaidItems.length === 0 && !coinbase} />
+            {plaidItems.length > 0 || coinbase ? <SyncAllButton /> : null}
             <Link
-              href="/accounts/new"
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+              href="#connect-accounts"
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md bg-emerald-600 px-4 text-sm font-medium text-white transition-colors hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
             >
-              <Plus className="size-4" /> Add account
+              <Plus className="size-4" /> Connect accounts
             </Link>
           </div>
         }
       />
       <PageBody>
         <div className="space-y-8">
-          <AccountsNetWorthTracker
-            rows={rows}
-            netWorth={netWorth.netWorth}
-            totalAssets={netWorth.totalAssets}
-            totalLiabilities={netWorth.totalLiabilities}
-            historyPromise={historyPromise}
-          />
+          <div className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <PlaidConnections
+              initialStatus={plaidCredential}
+              connections={plaidItems.map((item) => ({
+                id: item.id,
+                institutionName: item.institutionName,
+                status: item.status,
+                lastSyncedAt: item.lastSyncedAt?.toISOString() ?? null,
+                errorMessage: item.errorMessage,
+                accounts: item.accounts.map((account) => ({ id: account.id, name: account.name, mask: account.mask })),
+              }))}
+            />
+          </div>
 
-          <section aria-labelledby="connections-heading">
-            <div className="mb-4">
-              <h2 id="connections-heading" className="text-base font-semibold">Connections</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Refresh balances, repair access, or remove an institution.</p>
-            </div>
-            <div className="space-y-5 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-              <PlaidDeveloperSettings initialStatus={plaidCredential} />
-              <PlaidConnections
-                configured={plaidCredential.configured}
-                connections={plaidItems.map((item) => ({
-                  id: item.id,
-                  institutionName: item.institutionName,
-                  status: item.status,
-                  lastSyncedAt: item.lastSyncedAt?.toISOString() ?? null,
-                  errorMessage: item.errorMessage,
-                }))}
+          <div id="account-balances" className="scroll-mt-6">
+            {rows.length > 0 ? (
+              <AccountsNetWorthTracker
+                rows={rows}
+                netWorth={netWorth.netWorth}
+                totalAssets={netWorth.totalAssets}
+                totalLiabilities={netWorth.totalLiabilities}
+                historyPromise={historyPromise}
               />
+            ) : <p className="text-sm text-zinc-500">Your balances will appear here after you connect an institution or add an account manually.</p>}
+          </div>
+
+          <details className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-950">
+            <summary className="cursor-pointer text-sm font-medium">{coinbase ? "Coinbase connection" : "Other connections: Coinbase"}</summary>
+            <div className="mt-4">
               <CoinbaseConnection
                 configured={isCoinbaseConfigured()}
                 profileEnabled={Boolean(coinbase)}
@@ -270,12 +273,12 @@ export default async function AccountsPage() {
                 } : null}
               />
             </div>
-          </section>
+          </details>
 
           <section aria-labelledby="manual-data-heading">
             <div className="mb-3">
               <h2 id="manual-data-heading" className="text-base font-semibold">Add what connections miss</h2>
-              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">For property, private assets, debts, and institutions still communicating by carrier pigeon.</p>
+              <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Enter balances for accounts or assets that aren’t available through Plaid.</p>
             </div>
             <nav aria-label="Add manual financial data" className="grid overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-zinc-200 lg:dark:divide-zinc-800">
               <ManualDataLink href="/accounts/cost-basis/import" title="Cost basis statement" description="Import brokerage lots" />

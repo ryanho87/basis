@@ -23,7 +23,7 @@ function load(source, imports = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   vm.runInNewContext(compiled, {
-    exports: loaded.exports, Date, URLSearchParams, Request, Response, Buffer,
+    exports: loaded.exports, Date, URL, URLSearchParams, Request, Response, Buffer, process,
     require: (name) => {
       if (Object.hasOwn(imports, name)) return imports[name];
       if (name === "server-only") return {};
@@ -94,6 +94,70 @@ try {
   assert.equal(await prisma.transactionCategory.count(), 15);
   assert.equal((await prisma.transactionCategory.findUnique({ where: { id: categories[0].id } })).name, "My custom label");
   console.log("Categories: SQLite initialization, repeat calls, and preserved edits passed");
+
+  // Exercise the actual routes; no request reaches Plaid and no real secret is used.
+  const kind = load("lib/account-connection.ts");
+  const { Products } = require("plaid");
+  let linkRequest;
+  let linkCalls = 0;
+  let institutionChecks = 0;
+  let consented = [Products.Transactions];
+  const provider = {
+    linkTokenCreate: async (request) => { linkRequest = request; linkCalls++; return { data: { link_token: "fixture-link" } }; },
+    itemGet: async () => ({ data: { item: { consented_products: consented } } }),
+    institutionsGet: async () => { institutionChecks++; },
+  };
+  const sharedBoundaries = {
+    "@/lib/user": { getCurrentUserId: async () => user.id },
+    "@/lib/prisma": { prisma },
+    "@/lib/plaid/client": { getPlaidClient: () => provider },
+    "@/lib/plaid/token-crypto": { encryptPlaidSecret: (value) => `encrypted:${value}`, decryptPlaidSecret: (value) => value.replace("encrypted:", ""), decryptPlaidAccessToken: () => "fixture-token" },
+    "@/lib/plaid/errors": { toSafePlaidError: (error) => ({ message: error.message }) },
+  };
+  const linkRoute = load("app/api/plaid/link-token/route.ts", {
+    ...sharedBoundaries,
+    "@/lib/account-connection": kind,
+    "@/lib/plaid/developer-credentials": { getPlaidConfigForUser: async () => ({}), getPlaidConfigForItem: async () => ({}) },
+  });
+  const apiRequest = (body, method = "POST") => new Request("https://basis.example/api/plaid/link-token", { method, body: JSON.stringify(body) });
+  for (const [accountKind, expected] of [["banking", Products.Transactions], ["investments", Products.Investments], ["loans", Products.Liabilities], [undefined, Products.Transactions]]) {
+    assert.equal((await linkRoute.POST(apiRequest({ accountKind }))).status, 200);
+    assert.deepEqual(Array.from(linkRequest.products), [expected]);
+    assert.equal(linkRequest.additional_consented_products.length, 2);
+    assert.ok(!linkRequest.additional_consented_products.includes(expected));
+    assert.equal(linkRequest.user.client_user_id, user.id);
+  }
+  const callsBeforeInvalid = linkCalls;
+  for (const body of [null, [], "banking", { accountKind: "invalid" }, { accountKind: 123 }, { connectionId: {} }, { connectionId: " " }]) {
+    assert.equal((await linkRoute.POST(apiRequest(body))).status, 400);
+  }
+  assert.equal((await linkRoute.POST(new Request("https://basis.example/api/plaid/link-token", { method: "POST", body: "bad JSON" }))).status, 400);
+  assert.equal(linkCalls, callsBeforeInvalid);
+  const credentials = await prisma.plaidDeveloperCredential.create({ data: { userId: user.id, clientIdEncrypted: "encrypted:fixture-client", secretEncrypted: "encrypted:fixture-secret", environment: "sandbox" } });
+  const item = await prisma.plaidItem.create({ data: { userId: user.id, developerCredentialId: credentials.id, itemId: "fixture-item", accessTokenEncrypted: "fixture-token", status: "ACTIVE" } });
+  assert.equal((await linkRoute.POST(apiRequest({ connectionId: item.id }))).status, 200);
+  assert.equal(linkRequest.access_token, "fixture-token");
+  assert.equal(linkRequest.products, undefined);
+  assert.equal(linkRequest.update.account_selection_enabled, true);
+  assert.deepEqual(Array.from(linkRequest.additional_consented_products).sort(), [Products.Investments, Products.Liabilities].sort());
+  consented = [Products.Transactions, Products.Investments, Products.Liabilities];
+  await linkRoute.POST(apiRequest({ connectionId: item.id }));
+  assert.equal(linkRequest.additional_consented_products, undefined);
+  const stranger = await prisma.user.create({ data: { name: "Other user", email: "other@example.test" } });
+  const foreignItem = await prisma.plaidItem.create({ data: { userId: stranger.id, itemId: "other-item", accessTokenEncrypted: "other-token" } });
+  const beforeForeign = linkCalls;
+  assert.equal((await linkRoute.POST(apiRequest({ connectionId: foreignItem.id }))).status, 404);
+  await prisma.plaidItem.update({ where: { id: item.id }, data: { status: "DISCONNECTED" } });
+  assert.equal((await linkRoute.POST(apiRequest({ connectionId: item.id }))).status, 404);
+  assert.equal(linkCalls, beforeForeign);
+  const credentialRoute = load("app/api/plaid/developer-credentials/route.ts", sharedBoundaries);
+  assert.equal((await credentialRoute.PUT(apiRequest({ clientId: "fixture-client", secret: "new-secret", environment: "production" }, "PUT"))).status, 409);
+  assert.equal((await credentialRoute.PUT(apiRequest({ clientId: "other-client", secret: "new-secret", environment: "sandbox" }, "PUT"))).status, 409);
+  assert.equal(institutionChecks, 0, "Unsafe switches must fail before contacting Plaid");
+  assert.equal((await credentialRoute.PUT(apiRequest({ clientId: "fixture-client", secret: "new-secret", environment: "sandbox" }, "PUT"))).status, 200);
+  assert.equal(institutionChecks, 1, "Rotating the same account's secret remains supported");
+  assert.equal((await prisma.plaidDeveloperCredential.findUnique({ where: { id: credentials.id } })).secretEncrypted, "encrypted:new-secret");
+  console.log("Plaid setup: account types, adding accounts, input validation, tenant isolation, and environment guard passed");
 
   const connection = await prisma.coinbaseConnection.create({ data: { userId: user.id, status: "ACTIVE" } });
   await prisma.coinbaseAccount.create({ data: { coinbaseConnectionId: connection.id, externalAccountId: "old", name: "Old wallet", accountType: "CRYPTO", currency: "BTC", quantity: 1, priceUsd: 100, valueUsd: 100, lastSyncedAt: new Date("2026-01-01") } });
