@@ -9,7 +9,9 @@ export function proxy(request: NextRequest) {
   // Vercel Cron authenticates with CRON_SECRET rather than a browser session.
   // Let only this exact path reach its route-level timing-safe bearer check.
   const scheduledRefreshPath = pathname === "/api/cron/financial-refresh";
-  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/api/auth/") || remoteMcpPath || scheduledRefreshPath) {
+  // Plaid signs callbacks; its route verifies the signature and body hash.
+  const plaidWebhookPath = pathname === "/api/plaid/webhook";
+  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/api/auth/") || remoteMcpPath || scheduledRefreshPath || plaidWebhookPath) {
     return NextResponse.next();
   }
 

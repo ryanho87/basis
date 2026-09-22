@@ -85,212 +85,197 @@ export default async function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title={`Welcome${data.name ? ", " + data.name : ""}`}
-        description={physicianMode ? "Personal wealth and practice cash flow, without the spreadsheet residency" : "Your unified financial picture"}
+        title="Home"
+        description={`${data.name ? `Hi, ${data.name}. ` : ""}See where you stand and choose what to do next.`}
         actions={
           !onboarded ? (
             <Link
               href="/onboarding"
               className="inline-flex h-9 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700"
             >
-              <Sparkles className="size-4" /> Start onboarding
+              <Sparkles className="size-4" /> Set up your profile
             </Link>
           ) : null
         }
       />
       <PageBody>
         {!hasAnyData ? (
-          <div className="space-y-6">
-            <EmptyState
-              title="Let’s get you set up"
-              description={physicianMode
-                ? "Connect personal and practice accounts, then add payroll and expected clinical income. Basis will turn the mess into a money plan."
-                : "Start with onboarding. The assistant will ask about your situation and recommend a profile. Or jump straight to adding accounts."}
-              ctaLabel="Start onboarding"
-              ctaHref="/onboarding"
-            />
-            <div className="grid gap-3 md:grid-cols-3">
-              <Link href="/accounts" className="block">
-                <Card className="hover:border-emerald-500/50 transition-colors">
-                  <CardContent className="p-5">
-                    <div className="text-sm font-medium">Add accounts manually</div>
-                    <div className="mt-1 text-xs text-zinc-500">
-                      Brokerage, 401k, crypto, real estate
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-              <Link href={physicianMode ? "/tax#income-snapshot" : "/equity"} className="block">
-                <Card className="hover:border-emerald-500/50 transition-colors">
-                  <CardContent className="p-5">
-                    <div className="text-sm font-medium">{physicianMode ? "Import a Gusto pay stub" : "Add RSU grants"}</div>
-                    <div className="mt-1 text-xs text-zinc-500">
-                      {physicianMode ? "Use current payroll and withholding" : "Track vesting and cost basis"}
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-              <Link href={physicianMode ? "/tax#s-corp-profile" : "/tax"} className="block">
-                <Card className="hover:border-emerald-500/50 transition-colors">
-                  <CardContent className="p-5">
-                    <div className="text-sm font-medium">{physicianMode ? "Add practice income" : "Set up income profile"}</div>
-                    <div className="mt-1 text-xs text-zinc-500">
-                      {physicianMode ? "Revenue, expenses, payroll, retirement" : "Project this year’s tax bill"}
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            </div>
-          </div>
+          <EmptyState
+            title="Start with your accounts"
+            description="Connect a bank or add an account manually. Once your balances are here, you can explore your spending and build a money plan."
+            ctaLabel="Add your first account"
+            ctaHref="/accounts"
+          />
         ) : (
           <div className="space-y-6">
-            <Suspense fallback={<NetWorthHistoryFallback />}>
-              <DashboardNetWorthHistory userId={user.id} basisCoverage={nw.basisCoverage} />
-            </Suspense>
+            <nav aria-label="What would you like to do?" className="divide-y divide-zinc-200 border-y border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800 sm:flex sm:divide-x sm:divide-y-0">
+              {[
+                { href: "/accounts", label: "Check my accounts", detail: "Balances, investments, and debts" },
+                { href: "/transactions", label: "Understand my spending", detail: "Money coming in and going out" },
+                { href: "/plan", label: "Plan my money", detail: "Savings, bills, and what's left" },
+              ].map((item) => (
+                <Link key={item.href} href={item.href} className="group flex min-h-20 flex-1 items-center justify-between gap-3 px-3 py-4 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 dark:hover:bg-zinc-900 sm:px-4">
+                  <span><span className="block text-sm font-medium">{item.label}</span><span className="mt-1 block text-xs text-zinc-500">{item.detail}</span></span>
+                  <ArrowRight className="size-4 shrink-0 text-zinc-400" aria-hidden="true" />
+                </Link>
+              ))}
+            </nav>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <Stat
-                label="Gross net worth"
+                label="Net worth"
                 value={formatCurrency(nw.netWorth, { compact: true })}
-                hint={`${formatCurrency(nw.totalAssets, { compact: true })} assets · ${formatCurrency(nw.totalLiabilities, { compact: true })} liab.`}
+                hint={`${formatCurrency(nw.totalAssets, { compact: true })} assets · ${formatCurrency(nw.totalLiabilities, { compact: true })} debts`}
               />
               <Stat
                 label="Estimated after-tax net worth"
                 value={formatCurrency(nw.afterTaxNetWorth, { compact: true })}
                 hint={
                   taxImplied > 0
-                    ? `${formatCurrency(taxImplied, { compact: true })} of implied taxes`
-                    : "No taxable gains yet"
+                    ? `${formatCurrency(taxImplied, { compact: true })} estimated taxes on assets`
+                    : "Based on the account data currently available"
                 }
               />
-              <Stat
-                label={`${new Date().getFullYear()} Projected Tax`}
-                value={formatCurrency(tax.totalTaxWithState, { compact: true })}
-                hint={tax.state
-                  ? `Federal + ${tax.state.stateCode} · ${formatPercent(tax.effectiveRateWithState)} effective · ${formatPercent(tax.combinedMarginalOrdinaryRate)} marginal`
-                  : `Federal only · ${formatPercent(tax.effectiveRate)} effective · ${formatPercent(tax.marginalOrdinaryRate)} marginal`}
-              />
+
             </div>
 
-            {physicianMode ? (
-              <Card className="overflow-hidden">
-                <CardContent className="p-0">
-                  <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">Practice money plan</p>
-                      {physicianPlan ? (
-                        <>
-                          <p className="mt-2 text-xl font-semibold tracking-tight">
-                            {formatCurrency(physicianPlan.estimatedCashBeforeOwnerDistribution - physicianFederalReserve, { compact: true })} estimated after known commitments
-                          </p>
-                          <p className="mt-2 max-w-[70ch] text-sm leading-6 text-zinc-500">
-                            Includes operating costs, owner payroll, employer payroll taxes, retirement, and estimated federal income tax before payments already made.
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="mt-2 text-lg font-semibold">Add practice income to unlock your allocation</p>
-                          <p className="mt-2 text-sm text-zinc-500">Basis needs revenue, expenses, and owner payroll before it starts bossing your cash around.</p>
-                        </>
-                      )}
-                    </div>
-                    <Link href={physicianPlan ? "/plan" : "/tax#s-corp-profile"} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
-                      {physicianPlan ? "Review money plan" : "Add practice income"} <ArrowRight className="size-4" />
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
+            <Suspense fallback={<NetWorthHistoryFallback />}>
+              <DashboardNetWorthHistory userId={user.id} basisCoverage={nw.basisCoverage} />
+            </Suspense>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Asset Mix</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2.5">
-                    <CategoryRow label="Cash" value={nw.byCategory.cash} total={nw.totalAssets} />
-                    <CategoryRow label="Taxable investments" value={nw.byCategory.taxableInvestments} total={nw.totalAssets} />
-                    <CategoryRow label="Retirement" value={nw.byCategory.retirement} total={nw.totalAssets} />
-                    <CategoryRow label="Crypto" value={nw.byCategory.crypto} total={nw.totalAssets} />
-                    <CategoryRow label="Real estate" value={nw.byCategory.realEstate} total={nw.totalAssets} />
-                    <CategoryRow label="Other" value={nw.byCategory.other} total={nw.totalAssets} />
-                  </div>
-                </CardContent>
-              </Card>
+            <details className="border-t border-zinc-200 pt-5 dark:border-zinc-800">
+              <summary className="cursor-pointer rounded-md text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">Investments, income & tax details</summary>
+              <p className="mt-2 text-sm text-zinc-500">Explore your asset mix, projected income, and estimated taxes when you need a closer look.</p>
+              <div className="mt-5 space-y-6">
+                  <Stat
+                    label={`${new Date().getFullYear()} Projected Tax`}
+                    value={formatCurrency(tax.totalTaxWithState, { compact: true })}
+                    hint={tax.state
+                      ? `Federal + ${tax.state.stateCode} · ${formatPercent(tax.effectiveRateWithState)} effective · ${formatPercent(tax.combinedMarginalOrdinaryRate)} marginal`
+                      : `Federal only · ${formatPercent(tax.effectiveRate)} effective · ${formatPercent(tax.marginalOrdinaryRate)} marginal`}
+                  />
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>{new Date().getFullYear()} Income Projection</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 text-sm">
-                    <Row label="YTD W-2" value={formatCurrency(projection.ytdW2)} />
-                    <Row label="Projected remaining W-2" value={formatCurrency(projection.remainingW2)} />
-                    <Row label="Projected bonus" value={formatCurrency(projection.projectedBonus)} />
-                    <Row label="YTD RSU vest income" value={formatCurrency(projection.ytdRsuVestIncome)} />
-                    <Row label="Upcoming RSU income" value={formatCurrency(projection.upcomingRsuIncome)} />
-                    {projection.projectedSCorpDistribution > 0 && (
-                      <Row label="Planned cash distribution" value={formatCurrency(projection.projectedSCorpDistribution)} />
-                    )}
-                    {projection.projectedSCorpPassThrough > 0 && (
-                      <Row label="S-Corp pass-through income" value={formatCurrency(projection.projectedSCorpPassThrough)} />
-                    )}
-                    <div className="border-t border-zinc-200 dark:border-zinc-800 pt-2 mt-2 flex justify-between font-medium">
-                      <span>Total projected ordinary</span>
-                      <span className="tabular-nums">{formatCurrency(projection.totalProjectedOrdinary)}</span>
-                    </div>
-                  </div>
-                  <div className="mt-4 flex justify-end">
-                    <Link
-                      href="/tax"
-                      className="text-xs text-emerald-600 hover:underline inline-flex items-center gap-1"
-                    >
-                      Tax projection details <ArrowRight className="size-3" />
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                {physicianMode ? (
+                  <Card className="overflow-hidden">
+                    <CardContent className="p-0">
+                      <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                        <div>
+                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400">Practice money plan</p>
+                          {physicianPlan ? (
+                            <>
+                              <p className="mt-2 text-xl font-semibold tracking-tight">
+                                {formatCurrency(physicianPlan.estimatedCashBeforeOwnerDistribution - physicianFederalReserve, { compact: true })} estimated after known commitments
+                              </p>
+                              <p className="mt-2 max-w-[70ch] text-sm leading-6 text-zinc-500">
+                                Includes operating costs, owner payroll, employer payroll taxes, retirement, and estimated federal income tax before payments already made.
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="mt-2 text-lg font-semibold">Add practice income to unlock your allocation</p>
+                              <p className="mt-2 text-sm text-zinc-500">Add expected revenue, business expenses, and your salary to see how much is available.</p>
+                            </>
+                          )}
+                        </div>
+                        <Link href={physicianPlan ? "/plan" : "/tax#s-corp-profile"} className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+                          {physicianPlan ? "Review money plan" : "Add practice income"} <ArrowRight className="size-4" />
+                        </Link>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ) : null}
 
-            {data.strategySuggestions.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Sparkles className="size-4 text-emerald-500" />
-                    Strategies for you
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {data.strategySuggestions.map((s) => (
-                      <Link
-                        key={s.id}
-                        href={`/strategies#${s.id}`}
-                        className="block rounded-md border border-zinc-200 dark:border-zinc-800 p-3 hover:border-emerald-500/50"
-                      >
-                        <div className="text-sm font-medium">{s.title}</div>
-                        <div className="mt-1 text-xs text-zinc-500">{s.summary}</div>
-                      </Link>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Where your money is</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2.5">
+                        <CategoryRow label="Cash" value={nw.byCategory.cash} total={nw.totalAssets} />
+                        <CategoryRow label="Taxable investments" value={nw.byCategory.taxableInvestments} total={nw.totalAssets} />
+                        <CategoryRow label="Retirement" value={nw.byCategory.retirement} total={nw.totalAssets} />
+                        <CategoryRow label="Crypto" value={nw.byCategory.crypto} total={nw.totalAssets} />
+                        <CategoryRow label="Real estate" value={nw.byCategory.realEstate} total={nw.totalAssets} />
+                        <CategoryRow label="Other" value={nw.byCategory.other} total={nw.totalAssets} />
+                      </div>
+                    </CardContent>
+                  </Card>
 
-            {tax.bracketRoom.niitOver > 0 && (
-              <Card className="border-amber-300 dark:border-amber-700">
-                <CardContent className="p-4 flex items-start gap-3">
-                  <AlertTriangle className="size-5 text-amber-500 mt-0.5" />
-                  <div className="text-sm">
-                    <div className="font-medium">NIIT threshold crossed</div>
-                    <div className="mt-1 text-zinc-600 dark:text-zinc-400">
-                      You’re {formatCurrency(tax.bracketRoom.niitOver)} over the {formatCurrency(tax.thresholds.niit)} NIIT threshold. Investment income above this point pays an additional 3.8% on top of LTCG/dividends.
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>{new Date().getFullYear()} Expected income</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2 text-sm">
+                        <Row label="Wages earned so far" value={formatCurrency(projection.ytdW2)} />
+                        <Row label="Expected remaining wages" value={formatCurrency(projection.remainingW2)} />
+                        <Row label="Projected bonus" value={formatCurrency(projection.projectedBonus)} />
+                        <Row label="Stock grants vested this year" value={formatCurrency(projection.ytdRsuVestIncome)} />
+                        <Row label="Expected future stock vesting" value={formatCurrency(projection.upcomingRsuIncome)} />
+                        {projection.projectedSCorpDistribution > 0 && (
+                          <Row label="Planned cash distribution" value={formatCurrency(projection.projectedSCorpDistribution)} />
+                        )}
+                        {projection.projectedSCorpPassThrough > 0 && (
+                          <Row label="S-Corp pass-through income" value={formatCurrency(projection.projectedSCorpPassThrough)} />
+                        )}
+                        <div className="border-t border-zinc-200 dark:border-zinc-800 pt-2 mt-2 flex justify-between font-medium">
+                          <span>Total expected ordinary income</span>
+                          <span className="tabular-nums">{formatCurrency(projection.totalProjectedOrdinary)}</span>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex justify-end">
+                        <Link
+                          href="/tax"
+                          className="text-xs text-emerald-600 hover:underline inline-flex items-center gap-1"
+                        >
+                          Review income & taxes <ArrowRight className="size-3" />
+                        </Link>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {data.strategySuggestions.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Sparkles className="size-4 text-emerald-500" />
+                        Strategies for you
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {data.strategySuggestions.map((s) => (
+                          <Link
+                            key={s.id}
+                            href={`/strategies#${s.id}`}
+                            className="block rounded-md border border-zinc-200 dark:border-zinc-800 p-3 hover:border-emerald-500/50"
+                          >
+                            <div className="text-sm font-medium">{s.title}</div>
+                            <div className="mt-1 text-xs text-zinc-500">{s.summary}</div>
+                          </Link>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {tax.bracketRoom.niitOver > 0 && (
+                  <Card className="border-amber-300 dark:border-amber-700">
+                    <CardContent className="p-4 flex items-start gap-3">
+                      <AlertTriangle className="size-5 text-amber-500 mt-0.5" />
+                      <div className="text-sm">
+                        <div className="font-medium">Additional investment tax may apply</div>
+                        <div className="mt-1 text-zinc-600 dark:text-zinc-400">
+                          Your projected income is above the {formatCurrency(tax.thresholds.niit)} threshold for the net investment income tax (NIIT). Some investment income may be subject to an additional 3.8% tax.
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </details>
           </div>
         )}
       </PageBody>

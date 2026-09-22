@@ -44,8 +44,8 @@ export default async function EquityPage() {
   return (
     <div>
       <PageHeader
-        title="Equity & RSUs"
-        description="Track grants, vesting, and cost basis"
+        title="Stock grants"
+        description="See when your RSU shares become yours and record their value when they vest."
         actions={
           <Link
             href="/equity/new"
@@ -59,7 +59,7 @@ export default async function EquityPage() {
         {grants.length === 0 ? (
           <EmptyState
             title="No RSU grants yet"
-            description="Add your first RSU grant. We'll generate the vest schedule and let you mark each vest with the FMV to lock cost basis."
+            description="Add the stock grant from your employer. We'll create its vesting schedule, then you can record the share price each time shares become yours."
             ctaLabel="Add grant"
             ctaHref="/equity/new"
           />

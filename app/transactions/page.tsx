@@ -95,8 +95,8 @@ export default async function TransactionsPage({ searchParams }: { searchParams:
   return (
     <div>
       <PageHeader
-        title="Transactions"
-        description="Every connected cash and card account, now with categories you control"
+        title="Spending"
+        description="See what comes in, what goes out, and where your money goes."
         actions={<SyncAllButton />}
       />
       <PageBody className="max-w-[1500px]">

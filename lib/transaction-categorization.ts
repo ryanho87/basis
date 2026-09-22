@@ -29,10 +29,14 @@ export function normalizeMerchant(value: string) {
 }
 
 export async function ensureTransactionCategories(userId: string) {
-  await prisma.transactionCategory.createMany({
-    data: DEFAULT_TRANSACTION_CATEGORIES.map(([name, slug, color]) => ({ userId, name, slug, color, isSystem: true })),
-    skipDuplicates: true,
-  });
+  // Upsert works on both PostgreSQL and SQLite, and preserves user edits.
+  await prisma.$transaction(DEFAULT_TRANSACTION_CATEGORIES.map(([name, slug, color]) =>
+    prisma.transactionCategory.upsert({
+      where: { userId_slug: { userId, slug } },
+      create: { userId, name, slug, color, isSystem: true },
+      update: {},
+    }),
+  ));
   return prisma.transactionCategory.findMany({ where: { userId, archivedAt: null }, orderBy: [{ isSystem: "desc" }, { name: "asc" }] });
 }
 

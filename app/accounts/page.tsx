@@ -281,7 +281,7 @@ export default async function AccountsPage() {
               <ManualDataLink href="/accounts/cost-basis/import" title="Cost basis statement" description="Import brokerage lots" />
               <ManualDataLink href="/accounts/new" title="Financial account" description="Cash or investment account" />
               <ManualDataLink href="/accounts/manual-asset/new" title="Property or asset" description="Real estate, vehicle, private equity" />
-              <ManualDataLink href="/accounts/liability/new" title="Liability" description="Mortgage, card, or other debt" />
+              <ManualDataLink href="/accounts/liability/new" title="Debt" description="Mortgage, card, or other loan" />
             </nav>
           </section>
         </div>

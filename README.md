@@ -106,3 +106,15 @@ Invite links place their one-time token in the URL fragment. Basis immediately e
 
 - Tax engine is a deliberately simplified model — federal plus California only, no AMT, standard deduction only, no itemizing. When a plan year runs ahead of published tables (FTB brackets, SSA wage base, EDD SDI rate, IRS contribution limits) Basis reuses the newest published figures and says so. Good for planning, not for filing.
 - Invite-only authentication keeps each login attached to a separate financial profile.
+
+## Regression checks
+
+Run `npm run test:review-fixes` for RSU schedule validation and atomic grant writes,
+Coinbase failure recovery, SQLite category initialization, and Plaid callback
+routing/signature verification. It creates and deletes a temporary SQLite database,
+uses synthetic provider responses, and never reads or writes financial profiles in
+the configured database. Generate the Prisma clients first if needed.
+
+The schedule correction applies to newly created grants. Existing grants and
+historical net-worth snapshots are not rewritten automatically; review them against
+institution records before correcting previously saved data.

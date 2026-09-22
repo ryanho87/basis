@@ -37,7 +37,7 @@ export default async function MoneyPlanPage({
     <div>
       <PageHeader
         title="Money plan"
-        description="Total compensation to left-for-life, with levers you can move before you commit."
+        description="See what's available after taxes, savings, and bills. Try changes before saving them."
         actions={
           <nav aria-label="Plan year" className="flex w-full items-center gap-1 rounded-lg border border-zinc-200 p-1 dark:border-zinc-800 sm:w-auto">
             {years.map((option) => {
@@ -72,21 +72,21 @@ export default async function MoneyPlanPage({
           />
         ) : (
           <EmptyState
-            title={`Basis needs ${plan.planYear} income before it can plan around it`}
+            title={`Add your ${plan.planYear} income to get started`}
             description={
               plan.baseline.sCorp
-                ? "Add expected revenue, operating expenses, and owner payroll for your practice. Three numbers, and the waterfall fills itself in."
-                : "Add a paycheck profile, import a pay stub, or record RSU grants. Basis builds the plan from what actually pays you, not from a number you typed into a chatbot."
+                ? "Add expected business revenue, expenses, and your salary. Basis will use them to estimate what you can save and spend."
+                : "Add your salary or upload a pay stub on Income & taxes. You can add stock grants separately if they are part of your pay."
             }
-            ctaLabel="Add income on the Tax page"
+            ctaLabel="Add my income"
             ctaHref="/tax"
           />
         )}
 
         <section aria-labelledby="sources-heading" className="mt-8 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-          <h2 id="sources-heading" className="text-sm font-semibold">Where the starting point comes from</h2>
+          <h2 id="sources-heading" className="text-sm font-semibold">Update the income behind your plan</h2>
           <p className="mt-1 text-xs leading-5 text-zinc-500">
-            The top of the plan is live data, not an assumption. Change it at the source and the plan follows.
+            Your plan uses the income details you saved. Update them here if your pay or business income has changed.
           </p>
           <ul className="mt-3 grid gap-2 sm:grid-cols-3">
             {sourceLinks.map((link) => (

@@ -50,7 +50,7 @@ export function NetWorthHistory({
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-zinc-600 dark:text-zinc-400">
           <span className="inline-flex items-center gap-2">
             <span className="size-2 rounded-full bg-zinc-800 dark:bg-zinc-200" aria-hidden="true" />
-            Gross
+            Before estimated taxes
           </span>
           <span className="inline-flex items-center gap-2">
             <span className="size-2 rounded-full bg-emerald-600" aria-hidden="true" />
@@ -94,9 +94,11 @@ export function NetWorthHistory({
               labelFormatter={(label) => snapshotLabel(String(label))}
               formatter={(value, name) => [
                 formatCurrency(Number(value)),
-                name === "netWorth" ? "Gross net worth" : "Estimated after-tax",
+                name === "netWorth" ? "Net worth" : "Estimated after-tax",
               ]}
               contentStyle={{
+                backgroundColor: "var(--background)",
+                color: "var(--foreground)",
                 borderRadius: 8,
                 borderColor: "rgb(228 228 231)",
                 fontSize: 12,
@@ -127,13 +129,13 @@ export function NetWorthHistory({
       <div className="flex flex-col gap-1 border-t border-zinc-100 px-5 py-3 text-xs text-zinc-500 dark:border-zinc-900 dark:text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
         <span>
           {points.length === 1
-            ? "History starts today. Time travel remains outside the Plaid trial plan."
+            ? "Your first snapshot is saved. Future updates will show how your net worth changes."
             : `${points.length} snapshots recorded.`}
         </span>
         <span>
           {basisCoverage === null
-            ? "No taxable positions require basis yet"
-            : `${formatPercent(basisCoverage)} of taxable holdings have usable basis`}
+            ? "No purchase-cost details are needed for your current holdings"
+            : `${formatPercent(basisCoverage)} of taxable holdings have purchase-cost details`}
         </span>
       </div>
     </section>

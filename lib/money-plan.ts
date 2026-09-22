@@ -405,7 +405,7 @@ export function buildMoneyPlan(
       key: "commitments",
       title: "Savings, debt, and fixed commitments",
       rows: commitmentRows,
-      total: row("left-for-life", "Left for life", leftForLife, totalComp, "result"),
+      total: row("left-for-life", "Available for everyday spending", leftForLife, totalComp, "result"),
     },
   ];
 

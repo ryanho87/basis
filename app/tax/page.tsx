@@ -69,8 +69,8 @@ export default async function TaxPage() {
   return (
     <div>
       <PageHeader
-        title={`${physicianMode ? "Tax Plan" : "Tax Projection"} (${taxYear})`}
-        description={physicianMode ? "Payroll, practice income, reserves, and bracket room" : "Income projection, threshold tracking, and bracket room"}
+        title={`Income & taxes (${taxYear})`}
+        description={physicianMode ? "Update your salary and business income to estimate taxes and how much to set aside." : "Update your income and see an estimate of your taxes for the year."}
       />
       <PageBody>
         <div className="grid gap-4 md:grid-cols-4 mb-6">

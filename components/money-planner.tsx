@@ -123,13 +123,13 @@ export function MoneyPlanner({ baseline, savedLevers, savedCommitments, planYear
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.16em] text-emerald-300">
-              Left for life, {planYear}
+              Available for everyday spending, {planYear}
             </p>
             <p className={cn("mt-3 text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl", left < 0 ? "text-red-300" : "")}>
               {formatCurrency(draft.summary.leftForLifeMonthly)}<span className="text-lg font-normal text-zinc-400"> / month</span>
             </p>
             <p className="mt-2 text-sm text-zinc-400">
-              {formatCurrency(left)} a year after taxes and every commitment below
+              {formatCurrency(left)} a year after the taxes, savings, and bills listed below
               {deltas["left-for-life"] ? (
                 <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-xs font-medium text-zinc-100">
                   {signed(deltas["left-for-life"])} vs saved plan
@@ -153,7 +153,7 @@ export function MoneyPlanner({ baseline, savedLevers, savedCommitments, planYear
               <h2 id="waterfall-heading" className="text-lg font-semibold tracking-tight">Where the money goes</h2>
               <p className="mt-1 text-sm text-zinc-500">Annual amounts, a monthly pace, and each line as a share of total compensation.</p>
             </div>
-            {dirty ? <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Unsaved draft</span> : <span className="text-xs text-zinc-500">Saved plan</span>}
+            {dirty ? <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Unsaved draft</span> : <span className="text-xs text-zinc-500">{baseline.hasPlanRecord ? "Saved plan" : "Starting plan"}</span>}
           </div>
           <div className="mt-4 overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800">
             {draft.sections.map((section, index) => (
@@ -202,7 +202,7 @@ export function MoneyPlanner({ baseline, savedLevers, savedCommitments, planYear
 
         <aside className="space-y-6">
           <section aria-labelledby="levers-heading" className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 id="levers-heading" className="text-sm font-semibold">Levers</h2>
+            <h2 id="levers-heading" className="text-sm font-semibold">Try a change</h2>
             <p className="mt-1 text-xs leading-5 text-zinc-500">Drag away from the live value to see what changes. Nothing is saved until you say so.</p>
             <div className="mt-4 space-y-5">
               {definitions.map((definition) => {
@@ -257,8 +257,8 @@ export function MoneyPlanner({ baseline, savedLevers, savedCommitments, planYear
           </section>
 
           <section aria-labelledby="commitments-heading" className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-            <h2 id="commitments-heading" className="text-sm font-semibold">Commitments</h2>
-            <p className="mt-1 text-xs leading-5 text-zinc-500">Savings goals, debt payments, and fixed bills that come out before &ldquo;left for life.&rdquo;</p>
+            <h2 id="commitments-heading" className="text-sm font-semibold">Savings & bills</h2>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">Set aside money for goals, debt payments, and regular bills.</p>
             <ul className="mt-4 space-y-3">
               {commitments.map((commitment) => (
                 <li key={commitment.id} className={cn("rounded-lg border border-zinc-200 p-3 dark:border-zinc-800", !commitment.active && "opacity-60")}>
@@ -358,12 +358,12 @@ export function MoneyPlanner({ baseline, savedLevers, savedCommitments, planYear
           ) : dirty ? (
             <>
               <span className="font-medium">Previewing a draft.</span>{" "}
-              <span className="text-zinc-500">Left for life {signed(deltas["left-for-life"] ?? 0)} versus your saved plan.</span>
+              <span className="text-zinc-500">Available for spending {signed(deltas["left-for-life"] ?? 0)} versus your saved plan.</span>
             </>
           ) : state.status === "saved" ? (
             <span className="text-emerald-700 dark:text-emerald-400">{state.message}</span>
           ) : (
-            <span className="text-zinc-500">{baseline.hasPlanRecord ? "This is your saved plan." : "Nothing saved yet. Adjust the levers, add commitments, then save."}</span>
+            <span className="text-zinc-500">{baseline.hasPlanRecord ? "This is your saved plan." : "Nothing saved yet. Try changes, add savings or bills, then save."}</span>
           )}
         </p>
         <div className="flex items-center gap-2">

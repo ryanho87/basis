@@ -4,49 +4,25 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUserId } from "@/lib/user";
+import { parseRsuGrant, type RsuGrantFormState } from "@/lib/rsu-schedule";
 
-export async function createRsuGrant(formData: FormData) {
+export async function createRsuGrant(_previousState: RsuGrantFormState, formData: FormData): Promise<RsuGrantFormState> {
   const userId = await getCurrentUserId();
-  const ticker = String(formData.get("ticker") ?? "").toUpperCase();
-  const company = (formData.get("company") as string) || null;
-  const grantDate = new Date(String(formData.get("grantDate")));
-  const totalShares = parseFloat((formData.get("totalShares") as string) || "0");
-  const vestStartDate = new Date(String(formData.get("vestStartDate") ?? formData.get("grantDate")));
-  const cliffMonths = parseInt((formData.get("cliffMonths") as string) || "12", 10);
-  const totalMonths = parseInt((formData.get("totalMonths") as string) || "48", 10);
-  const cadence = String(formData.get("cadence") ?? "QUARTERLY"); // QUARTERLY | MONTHLY | YEARLY
-
-  const grant = await prisma.rsuGrant.create({
-    data: { userId, ticker, company, grantDate, totalShares },
-  });
-
-  // Auto-generate vest events based on cliff + cadence (simple linear schedule).
-  const periodMonths = cadence === "MONTHLY" ? 1 : cadence === "YEARLY" ? 12 : 3;
-  const periodsAfterCliff = Math.max(0, Math.floor((totalMonths - cliffMonths) / periodMonths));
-  const totalPeriods = periodsAfterCliff + (cliffMonths > 0 ? 1 : 0);
-  const sharesPerPeriod = totalShares / totalPeriods;
-
-  const events: { vestDate: Date; shares: number }[] = [];
-  if (cliffMonths > 0) {
-    const cliffDate = new Date(vestStartDate);
-    cliffDate.setMonth(cliffDate.getMonth() + cliffMonths);
-    events.push({ vestDate: cliffDate, shares: sharesPerPeriod });
-  }
-  for (let i = 1; i <= periodsAfterCliff; i++) {
-    const d = new Date(vestStartDate);
-    d.setMonth(d.getMonth() + cliffMonths + i * periodMonths);
-    events.push({ vestDate: d, shares: sharesPerPeriod });
+  let parsed: ReturnType<typeof parseRsuGrant>;
+  try {
+    parsed = parseRsuGrant(formData);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Check the grant details and try again." };
   }
 
-  if (events.length > 0) {
-    await prisma.vestEvent.createMany({
-      data: events.map((e) => ({
-        grantId: grant.id,
-        vestDate: e.vestDate,
-        shares: e.shares,
-        status: "PENDING",
-      })),
+  const { vestEvents, ...grant } = parsed;
+  try {
+    // Nested writes commit the grant and its complete schedule together.
+    await prisma.rsuGrant.create({
+      data: { userId, ...grant, vestEvents: { create: vestEvents } },
     });
+  } catch {
+    return { error: "We couldn't save this grant. Your details are still here. Please try again." };
   }
 
   revalidatePath("/equity");

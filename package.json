@@ -18,6 +18,7 @@
     "test:state-tax": "tsx scripts/evaluate-state-tax.ts",
     "test:money-plan": "tsx scripts/evaluate-money-plan.ts",
     "test:expenses": "tsx scripts/evaluate-expense-categorization.ts",
+    "test:review-fixes": "node --import tsx scripts/evaluate-review-fixes.mjs",
     "test:tenant": "tsx scripts/evaluate-tenant-isolation.ts",
     "build": "node scripts/migrate-deploy.mjs && next build",
     "start": "next start",

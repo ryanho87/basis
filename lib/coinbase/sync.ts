@@ -83,16 +83,7 @@ export async function syncCoinbase(
   );
   const warnings: string[] = [];
 
-  const connection = await prisma.coinbaseConnection.update({
-    where: { id: existingConnection.id },
-    data: { status: "ACTIVE", errorMessage: null },
-  });
-  const syncedAt = new Date();
-  await prisma.coinbaseAccount.updateMany({
-    where: { coinbaseConnectionId: connection.id },
-    data: { isActive: false },
-  });
-
+  // Finish network work before changing the last successful portfolio.
   const currencies = [...new Set(accounts.map((account) => account.currency.toUpperCase()))];
   const prices = new Map(
     await Promise.all(
@@ -102,7 +93,8 @@ export async function syncCoinbase(
 
   let pricedAccountsCount = 0;
   let totalValueUsd = 0;
-  for (const account of accounts) {
+  const syncedAt = new Date();
+  const balances = accounts.map((account) => {
     const currency = account.currency.toUpperCase();
     const available = number(account.available_balance?.value);
     const hold = number(account.hold?.value);
@@ -113,46 +105,46 @@ export async function syncCoinbase(
       pricedAccountsCount += 1;
       totalValueUsd += valueUsd;
     } else if (quantity !== 0) {
-      warnings.push(`${currency} could not be priced in USD and is excluded from net worth`);
+      throw new Error(`Could not price ${currency} in USD. Previous Coinbase balances were preserved; try syncing again.`);
     }
 
-    await prisma.coinbaseAccount.upsert({
-      where: {
-        coinbaseConnectionId_externalAccountId: {
-          coinbaseConnectionId: connection.id,
-          externalAccountId: account.uuid,
-        },
-      },
-      update: {
-        coinbaseConnectionId: connection.id,
-        name: account.name || `${currency} Wallet`,
-        currency,
-        accountType: account.type ?? "UNKNOWN",
-        quantity,
-        holdQuantity: hold,
-        priceUsd,
-        valueUsd,
-        isActive: true,
-        lastSyncedAt: syncedAt,
-      },
-      create: {
-        coinbaseConnectionId: connection.id,
-        externalAccountId: account.uuid,
-        name: account.name || `${currency} Wallet`,
-        currency,
-        accountType: account.type ?? "UNKNOWN",
-        quantity,
-        holdQuantity: hold,
-        priceUsd,
-        valueUsd,
-        lastSyncedAt: syncedAt,
-      },
-    });
-  }
+    return {
+      coinbaseConnectionId: existingConnection.id,
+      externalAccountId: account.uuid,
+      name: account.name || `${currency} Wallet`,
+      currency,
+      accountType: account.type ?? "UNKNOWN",
+      quantity,
+      holdQuantity: hold,
+      priceUsd,
+      valueUsd,
+      isActive: true,
+      lastSyncedAt: syncedAt,
+    };
+  });
 
-  await prisma.coinbaseConnection.update({
-    where: { id: connection.id },
-    data: { status: "ACTIVE", lastSyncedAt: syncedAt, errorMessage: null },
+  // A write failure must roll back both deactivation and replacement balances.
+  await prisma.$transaction(async (tx) => {
+    await tx.coinbaseAccount.updateMany({
+      where: { coinbaseConnectionId: existingConnection.id },
+      data: { isActive: false },
+    });
+    for (const balance of balances) {
+      await tx.coinbaseAccount.upsert({
+        where: {
+          coinbaseConnectionId_externalAccountId: {
+            coinbaseConnectionId: balance.coinbaseConnectionId,
+            externalAccountId: balance.externalAccountId,
+          },
+        },
+        update: balance,
+        create: balance,
+      });
+    }
+    await tx.coinbaseConnection.update({
+      where: { id: existingConnection.id },
+      data: { status: "ACTIVE", lastSyncedAt: syncedAt, errorMessage: null },
+    });
   });
   if (options.captureSnapshot !== false) {
     await captureNetWorthSnapshot(userId, "COINBASE_SYNC");
